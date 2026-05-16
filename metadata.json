@@ -1,0 +1,6 @@
+{
+  "name": "Lost Asset Locator",
+  "description": "An investigative tool to search for unclaimed property across western US states, track down relatives, and draft outreach emails.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
