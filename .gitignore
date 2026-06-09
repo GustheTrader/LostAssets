@@ -1,0 +1,12 @@
+node_modules/
+.tmp/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+*.sqlite
+*.sqlite.*
+agent/04_From_500_To_Beyond/*.csv

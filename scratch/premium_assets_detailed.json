@@ -1,0 +1,362 @@
+[
+  {
+    "rank": 1001,
+    "owner": "CALLAWAY MARIA D",
+    "top_asset_value": 292387.28,
+    "total_value": 891110.4700000001,
+    "num_assets": 6,
+    "assets": [
+      {
+        "property_id": "1039602849",
+        "property_type": "IN03: PROCEEDS DUE BENEFICIARIES",
+        "amount": 292475.01,
+        "holder": "AMERICAN GENERAL LIFE INSURANCE COMPANY",
+        "location": "PO BOX 85, COACHELLA, CA 92236",
+        "source": "From_500_To_Beyond_4_of_4.csv"
+      },
+      {
+        "property_id": "1039602848",
+        "property_type": "IN03: PROCEEDS DUE BENEFICIARIES",
+        "amount": 292387.28,
+        "holder": "AMERICAN GENERAL LIFE INSURANCE COMPANY",
+        "location": "PO BOX 85, COACHELLA, CA 92236",
+        "source": "From_500_To_Beyond_4_of_4.csv"
+      },
+      {
+        "property_id": "1039602850",
+        "property_type": "IN03: PROCEEDS DUE BENEFICIARIES",
+        "amount": 292387.28,
+        "holder": "AMERICAN GENERAL LIFE INSURANCE COMPANY",
+        "location": "PO BOX 85, COACHELLA, CA 92236",
+        "source": "From_500_To_Beyond_4_of_4.csv"
+      },
+      {
+        "property_id": "1032624746",
+        "property_type": "AC01: CHECKING ACCOUNTS",
+        "amount": 9128.85,
+        "holder": "MECHANICS BANK",
+        "location": "85550 CALLAWAY ST, COACHELLA, CA 92236",
+        "source": "From_500_To_Beyond_4_of_4.csv"
+      },
+      {
+        "property_id": "998816595",
+        "property_type": "IN01: INDIVIDUAL POLICY BENEFIT/CLM",
+        "amount": 3000.0,
+        "holder": "AMERICAN GENERAL LIFE INSURANCE COMPANY",
+        "location": "P O BOX 85, COACHELLA, CA 92236",
+        "source": "From_500_To_Beyond_3_of_4.csv"
+      },
+      {
+        "property_id": "970972782",
+        "property_type": "IN06: UNIDENTIFIED REMITTANCES",
+        "amount": 1732.05,
+        "holder": "METROPOLITAN LIFE INSURANCE COMPANY",
+        "location": "85 470 AVENUE 50, COACHELLA, CA 92236",
+        "source": "From_500_To_Beyond_2_of_4.csv"
+      }
+    ]
+  },
+  {
+    "rank": 1002,
+    "owner": "CALLAWAY WILLIAM R JR",
+    "top_asset_value": 292387.28,
+    "total_value": 292387.28,
+    "num_assets": 1,
+    "assets": [
+      {
+        "property_id": "1039602850",
+        "property_type": "IN03: PROCEEDS DUE BENEFICIARIES",
+        "amount": 292387.28,
+        "holder": "AMERICAN GENERAL LIFE INSURANCE COMPANY",
+        "location": "85565 CALLAWAY CIR, COACHELLA, CA 92236",
+        "source": "From_500_To_Beyond_4_of_4.csv"
+      }
+    ]
+  },
+  {
+    "rank": 1003,
+    "owner": "CALLAWAY SAN JUANITA S",
+    "top_asset_value": 292387.28,
+    "total_value": 292387.28,
+    "num_assets": 1,
+    "assets": [
+      {
+        "property_id": "1039602848",
+        "property_type": "IN03: PROCEEDS DUE BENEFICIARIES",
+        "amount": 292387.28,
+        "holder": "AMERICAN GENERAL LIFE INSURANCE COMPANY",
+        "location": "85540 CALLAWAY WAY, COACHELLA, CA 92236",
+        "source": "From_500_To_Beyond_4_of_4.csv"
+      }
+    ]
+  },
+  {
+    "rank": 1015,
+    "owner": "MYKKANEN CYNTHIA A",
+    "top_asset_value": 290345.5,
+    "total_value": 337554.63,
+    "num_assets": 2,
+    "assets": [
+      {
+        "property_id": "1032916702",
+        "property_type": "AC02: SAVINGS ACCOUNTS",
+        "amount": 290345.5,
+        "holder": "WELLS FARGO BANK NA (APECS 1009)",
+        "location": "3372 CORTESE CIR, SAN JOSE, CA 95127",
+        "source": "From_500_To_Beyond_4_of_4.csv"
+      },
+      {
+        "property_id": "1031733863",
+        "property_type": "IN03: PROCEEDS DUE BENEFICIARIES",
+        "amount": 47209.13,
+        "holder": "PRUDENTIAL ANNUITIES LIFE ASSURANCE CORP",
+        "location": "3372 CORTE SE CIR, SAN JOSE, CA 95127",
+        "source": "From_500_To_Beyond_4_of_4.csv"
+      }
+    ]
+  },
+  {
+    "rank": 1027,
+    "owner": "MCFARLAND FRANCES SCHUE",
+    "top_asset_value": 289684.47,
+    "total_value": 309682.57999999996,
+    "num_assets": 4,
+    "assets": [
+      {
+        "property_id": "1039301389",
+        "property_type": "SC12: UNDERLYING SHARES/OUTSTAND CER",
+        "amount": 289684.47,
+        "holder": "CHARLES SCHWAB & CO INC",
+        "location": "604 CYPRESS AVE., MILLBRAE, CA 94030",
+        "source": "From_500_To_Beyond_4_of_4.csv"
+      },
+      {
+        "property_id": "1039301388",
+        "property_type": "SC20: CREDIT BALANCES",
+        "amount": 10760.31,
+        "holder": "CHARLES SCHWAB & CO INC",
+        "location": "604 CYPRESS AVE., MILLBRAE, CA 94030",
+        "source": "From_500_To_Beyond_4_of_4.csv"
+      },
+      {
+        "property_id": "979480298",
+        "property_type": "SC12: UNDERLYING SHARES/OUTSTAND CER",
+        "amount": 7700.48,
+        "holder": "CHARLES SCHWAB & CO INC",
+        "location": "604 CYPRESS AVE., MILLBRAE, CA 94030",
+        "source": "From_500_To_Beyond_2_of_4.csv"
+      },
+      {
+        "property_id": "979480297",
+        "property_type": "SC20: CREDIT BALANCES",
+        "amount": 1537.32,
+        "holder": "CHARLES SCHWAB & CO INC",
+        "location": "604 CYPRESS AVE., MILLBRAE, CA 94030",
+        "source": "From_500_To_Beyond_2_of_4.csv"
+      }
+    ]
+  },
+  {
+    "rank": 1028,
+    "owner": "MCFARLAND ROBERT GORDON",
+    "top_asset_value": 289684.47,
+    "total_value": 309682.57999999996,
+    "num_assets": 4,
+    "assets": [
+      {
+        "property_id": "1039301389",
+        "property_type": "SC12: UNDERLYING SHARES/OUTSTAND CER",
+        "amount": 289684.47,
+        "holder": "CHARLES SCHWAB & CO INC",
+        "location": "604 CYPRESS AVE., MILLBRAE, CA 94030",
+        "source": "From_500_To_Beyond_4_of_4.csv"
+      },
+      {
+        "property_id": "1039301388",
+        "property_type": "SC20: CREDIT BALANCES",
+        "amount": 10760.31,
+        "holder": "CHARLES SCHWAB & CO INC",
+        "location": "604 CYPRESS AVE., MILLBRAE, CA 94030",
+        "source": "From_500_To_Beyond_4_of_4.csv"
+      },
+      {
+        "property_id": "979480298",
+        "property_type": "SC12: UNDERLYING SHARES/OUTSTAND CER",
+        "amount": 7700.48,
+        "holder": "CHARLES SCHWAB & CO INC",
+        "location": "604 CYPRESS AVE., MILLBRAE, CA 94030",
+        "source": "From_500_To_Beyond_2_of_4.csv"
+      },
+      {
+        "property_id": "979480297",
+        "property_type": "SC20: CREDIT BALANCES",
+        "amount": 1537.32,
+        "holder": "CHARLES SCHWAB & CO INC",
+        "location": "604 CYPRESS AVE., MILLBRAE, CA 94030",
+        "source": "From_500_To_Beyond_2_of_4.csv"
+      }
+    ]
+  },
+  {
+    "rank": 1033,
+    "owner": "SCHAVER WILLIAM",
+    "top_asset_value": 289341.13,
+    "total_value": 325483.32,
+    "num_assets": 2,
+    "assets": [
+      {
+        "property_id": "1040567766",
+        "property_type": "SC16: MUTUAL FUND SHARES",
+        "amount": 289341.13,
+        "holder": "TOTAL STOCK MKT IDX ADM- 585",
+        "location": "C/O JEFFREY W SCHAVER, SIMI VALLEY, CA 93065",
+        "source": "From_500_To_Beyond_4_of_4.csv"
+      },
+      {
+        "property_id": "1041713927",
+        "property_type": "SC16: MUTUAL FUND SHARES",
+        "amount": 36142.19,
+        "holder": "500 INDEX FUND ADM- 540",
+        "location": "C/O JEFFREY W SCHAVER, SIMI VALLEY, CA 93065",
+        "source": "From_500_To_Beyond_4_of_4.csv"
+      }
+    ]
+  },
+  {
+    "rank": 1038,
+    "owner": "YEE LEE SHUEY",
+    "top_asset_value": 288826.04,
+    "total_value": 585855.12,
+    "num_assets": 16,
+    "assets": [
+      {
+        "property_id": "1044641148",
+        "property_type": "SC12: UNDERLYING SHARES/OUTSTAND CER",
+        "amount": 288826.04,
+        "holder": "MICRON TECHNOLOGY INCORPORATED",
+        "location": "453 28TH AVE, SAN FRANCISCO, CA 94121",
+        "source": "From_500_To_Beyond_4_of_4.csv"
+      },
+      {
+        "property_id": "1044641147",
+        "property_type": "SC08: SHARES OF STOCK (RTRNED BY PO)",
+        "amount": 115530.42,
+        "holder": "MICRON TECHNOLOGY INCORPORATED",
+        "location": "453 28TH AVE, SAN FRANCISCO, CA 94121",
+        "source": "From_500_To_Beyond_4_of_4.csv"
+      },
+      {
+        "property_id": "983674649",
+        "property_type": "SC12: UNDERLYING SHARES/OUTSTAND CER",
+        "amount": 58175.9,
+        "holder": "EMC CORPORATION",
+        "location": "453 28TH AVE, SAN FRANCISCO, CA 94121",
+        "source": "From_500_To_Beyond_2_of_4.csv"
+      },
+      {
+        "property_id": "971650128",
+        "property_type": "SC12: UNDERLYING SHARES/OUTSTAND CER",
+        "amount": 42346.79,
+        "holder": "CISCO SYSTEMS",
+        "location": "453 28TH AVE, SAN FRANCISCO, CA 94121",
+        "source": "From_500_To_Beyond_2_of_4.csv"
+      },
+      {
+        "property_id": "980370034",
+        "property_type": "SC12: UNDERLYING SHARES/OUTSTAND CER",
+        "amount": 15770.67,
+        "holder": "GAP INC",
+        "location": "453 28TH AVE, SAN FRANCISCO, CA 94121",
+        "source": "From_500_To_Beyond_2_of_4.csv"
+      },
+      {
+        "property_id": "983674648",
+        "property_type": "SC12: UNDERLYING SHARES/OUTSTAND CER",
+        "amount": 14523.62,
+        "holder": "EMC CORPORATION",
+        "location": "453 28TH AVE, SAN FRANCISCO, CA 94121",
+        "source": "From_500_To_Beyond_2_of_4.csv"
+      },
+      {
+        "property_id": "980561974",
+        "property_type": "SC12: UNDERLYING SHARES/OUTSTAND CER",
+        "amount": 8061.84,
+        "holder": "JPMORGAN CHASE & CO",
+        "location": "453-28TH AVE, SAN FRANCISCO, CA 94121",
+        "source": "From_500_To_Beyond_2_of_4.csv"
+      },
+      {
+        "property_id": "983674646",
+        "property_type": "SC12: UNDERLYING SHARES/OUTSTAND CER",
+        "amount": 7261.76,
+        "holder": "EMC CORPORATION",
+        "location": "453 28TH AVE, SAN FRANCISCO, CA 94121",
+        "source": "From_500_To_Beyond_2_of_4.csv"
+      },
+      {
+        "property_id": "983674647",
+        "property_type": "SC12: UNDERLYING SHARES/OUTSTAND CER",
+        "amount": 7261.76,
+        "holder": "EMC CORPORATION",
+        "location": "453 28TH AVE, SAN FRANCISCO, CA 94121",
+        "source": "From_500_To_Beyond_2_of_4.csv"
+      },
+      {
+        "property_id": "971650127",
+        "property_type": "SC12: UNDERLYING SHARES/OUTSTAND CER",
+        "amount": 7057.8,
+        "holder": "CISCO SYSTEMS",
+        "location": "453 28TH AVE, SAN FRANCISCO, CA 94121",
+        "source": "From_500_To_Beyond_2_of_4.csv"
+      },
+      {
+        "property_id": "971650124",
+        "property_type": "SC12: UNDERLYING SHARES/OUTSTAND CER",
+        "amount": 4705.2,
+        "holder": "CISCO SYSTEMS",
+        "location": "453 28TH AVE, SAN FRANCISCO, CA 94121",
+        "source": "From_500_To_Beyond_2_of_4.csv"
+      },
+      {
+        "property_id": "971650125",
+        "property_type": "SC12: UNDERLYING SHARES/OUTSTAND CER",
+        "amount": 4705.2,
+        "holder": "CISCO SYSTEMS",
+        "location": "453 28TH AVE, SAN FRANCISCO, CA 94121",
+        "source": "From_500_To_Beyond_2_of_4.csv"
+      },
+      {
+        "property_id": "971650126",
+        "property_type": "SC12: UNDERLYING SHARES/OUTSTAND CER",
+        "amount": 4705.2,
+        "holder": "CISCO SYSTEMS",
+        "location": "453 28TH AVE, SAN FRANCISCO, CA 94121",
+        "source": "From_500_To_Beyond_2_of_4.csv"
+      },
+      {
+        "property_id": "980561975",
+        "property_type": "SC12: UNDERLYING SHARES/OUTSTAND CER",
+        "amount": 4030.92,
+        "holder": "JPMORGAN CHASE & CO",
+        "location": "453-28TH AVE, SAN FRANCISCO, CA 94121",
+        "source": "From_500_To_Beyond_2_of_4.csv"
+      },
+      {
+        "property_id": "980370033",
+        "property_type": "SC01: DIVIDENDS",
+        "amount": 1716.0,
+        "holder": "GAP INC",
+        "location": "453 28TH AVE, SAN FRANCISCO, CA 94121",
+        "source": "From_500_To_Beyond_2_of_4.csv"
+      },
+      {
+        "property_id": "1044641146",
+        "property_type": "SC01: DIVIDENDS",
+        "amount": 1176.0,
+        "holder": "MICRON TECHNOLOGY INCORPORATED",
+        "location": "453 28TH AVE, SAN FRANCISCO, CA 94121",
+        "source": "From_500_To_Beyond_4_of_4.csv"
+      }
+    ]
+  }
+]
