@@ -1,5 +1,3 @@
-import { createClient, type Session, type SupabaseClient } from "@supabase/supabase-js";
-
 export type TeamUser = {
   email: string;
   username: string;
@@ -11,55 +9,29 @@ export const TEAM_USERS: TeamUser[] = [
   { email: "pankajsewal@sbcglobal.net", username: "pankajsewal", role: "user" },
 ];
 
-export type SupabaseAuthConfig = {
-  supabaseUrl: string;
-  supabaseAnonKey: string;
-};
-
-const buildTimeSupabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const buildTimeSupabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
-
-export function createTeamAuthClient(config: SupabaseAuthConfig): SupabaseClient {
-  return createClient(config.supabaseUrl, config.supabaseAnonKey, {
-      auth: {
-        autoRefreshToken: true,
-        persistSession: true,
-        detectSessionInUrl: true,
-      },
-    });
-}
-
-export async function loadSupabaseAuthConfig(): Promise<SupabaseAuthConfig | null> {
-  if (buildTimeSupabaseUrl && buildTimeSupabaseAnonKey) {
-    return {
-      supabaseUrl: buildTimeSupabaseUrl,
-      supabaseAnonKey: buildTimeSupabaseAnonKey,
-    };
-  }
-
-  try {
-    const response = await fetch("/api/auth/config");
-    if (!response.ok) return null;
-    const data = await response.json();
-    if (data?.supabaseUrl && data?.supabaseAnonKey) {
-      return {
-        supabaseUrl: data.supabaseUrl,
-        supabaseAnonKey: data.supabaseAnonKey,
-      };
-    }
-  } catch {
-    return null;
-  }
-
-  return null;
-}
+export const TEAM_PASSWORD = "101010";
+export const TEAM_SESSION_KEY = "lostassets:team_user";
 
 export function findAllowedTeamUser(identifier: string): TeamUser | undefined {
   const normalized = identifier.trim().toLowerCase();
   return TEAM_USERS.find((user) => user.email === normalized || user.username === normalized);
 }
 
-export function getSessionTeamUser(session: Session | null): TeamUser | undefined {
-  const email = session?.user.email;
-  return email ? findAllowedTeamUser(email) : undefined;
+export function readStoredTeamUser(): TeamUser | undefined {
+  try {
+    const stored = localStorage.getItem(TEAM_SESSION_KEY);
+    if (!stored) return undefined;
+    const parsed = JSON.parse(stored) as Partial<TeamUser>;
+    return parsed.username ? findAllowedTeamUser(parsed.username) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function storeTeamUser(user: TeamUser) {
+  localStorage.setItem(TEAM_SESSION_KEY, JSON.stringify(user));
+}
+
+export function clearStoredTeamUser() {
+  localStorage.removeItem(TEAM_SESSION_KEY);
 }

@@ -1,15 +1,16 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { KeyRound, Loader2, LogOut, Mail, ShieldCheck, UserRound } from "lucide-react";
-import type { Session, SupabaseClient } from "@supabase/supabase-js";
+import { KeyRound, LogOut, ShieldCheck, UserRound } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
 import {
-  createTeamAuthClient,
+  TEAM_PASSWORD,
+  TEAM_USERS,
+  clearStoredTeamUser,
   findAllowedTeamUser,
-  getSessionTeamUser,
-  loadSupabaseAuthConfig,
+  readStoredTeamUser,
+  storeTeamUser,
   type TeamUser,
 } from "../services/teamAuth";
 
@@ -19,113 +20,45 @@ type TeamAuthGateProps = {
 
 export function TeamAuthGate({ children }: TeamAuthGateProps) {
   const [identifier, setIdentifier] = useState("");
-  const [session, setSession] = useState<Session | null>(null);
+  const [password, setPassword] = useState("");
   const [teamUser, setTeamUser] = useState<TeamUser | undefined>();
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [authClient, setAuthClient] = useState<SupabaseClient | null>(null);
 
   useEffect(() => {
-    let active = true;
-    let unsubscribe: (() => void) | undefined;
-
-    const initializeAuth = async () => {
-      const config = await loadSupabaseAuthConfig();
-      if (!active) return;
-
-      if (!config) {
-        setLoading(false);
-        return;
-      }
-
-      const client = createTeamAuthClient(config);
-      setAuthClient(client);
-
-      const { data } = await client.auth.getSession();
-      if (!active) return;
-      const nextTeamUser = getSessionTeamUser(data.session);
-      setSession(data.session);
-      setTeamUser(nextTeamUser);
-      if (data.session && !nextTeamUser) {
-        client.auth.signOut();
-        setError("This Supabase account is not approved for LostAssets.");
-      }
-      setLoading(false);
-
-      const subscription = client.auth.onAuthStateChange((_event, nextSession) => {
-        const nextTeamUser = getSessionTeamUser(nextSession);
-        setSession(nextSession);
-        setTeamUser(nextTeamUser);
-        if (nextSession && !nextTeamUser) {
-          client.auth.signOut();
-          setError("This Supabase account is not approved for LostAssets.");
-        }
-      });
-      unsubscribe = () => subscription.data.subscription.unsubscribe();
-    };
-
-    initializeAuth();
-
-    return () => {
-      active = false;
-      unsubscribe?.();
-    };
+    const storedUser = readStoredTeamUser();
+    if (storedUser) {
+      setTeamUser(storedUser);
+    }
   }, []);
 
-  const handleSignIn = async (event: React.FormEvent) => {
+  const handleSignIn = (event: React.FormEvent) => {
     event.preventDefault();
     setError(null);
-    setMessage(null);
-
-    if (!authClient) {
-      setError("Supabase Auth is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY, or SUPABASE_URL and SUPABASE_ANON_KEY on the server.");
-      return;
-    }
 
     const user = findAllowedTeamUser(identifier);
     if (!user) {
-      setError("Use an approved team username or email.");
+      setError("Choose an approved team username.");
       return;
     }
 
-    setSubmitting(true);
-    const { error: signInError } = await authClient.auth.signInWithOtp({
-      email: user.email,
-      options: {
-        emailRedirectTo: window.location.origin,
-        shouldCreateUser: true,
-      },
-    });
-    setSubmitting(false);
-
-    if (signInError) {
-      setError(signInError.message);
+    if (password !== TEAM_PASSWORD) {
+      setError("Password is incorrect.");
       return;
     }
 
-    setMessage(`Sign-in link sent to ${user.email}.`);
+    storeTeamUser(user);
+    setTeamUser(user);
+    setPassword("");
   };
 
-  const handleSignOut = async () => {
-    await authClient?.auth.signOut();
+  const handleSignOut = () => {
+    clearStoredTeamUser();
     setTeamUser(undefined);
-    setSession(null);
+    setIdentifier("");
+    setPassword("");
   };
 
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-neutral-950 text-neutral-100">
-        <div className="flex items-center gap-3 text-sm text-neutral-400">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Loading secure workspace
-        </div>
-      </div>
-    );
-  }
-
-  if (session && teamUser) {
+  if (teamUser) {
     return (
       <>
         <div className="fixed right-4 top-4 z-50 flex items-center gap-2 rounded-lg border border-white/10 bg-neutral-950/70 px-3 py-2 text-xs text-neutral-200 shadow-2xl shadow-black/30 backdrop-blur-md">
@@ -154,22 +87,31 @@ export function TeamAuthGate({ children }: TeamAuthGateProps) {
                 LostAssets private recovery workspace
               </h1>
               <p className="max-w-2xl text-base leading-7 text-neutral-300">
-                Sign in with an approved team username or email to access investigations, campaigns, claim packets, and database tools.
+                Pick an approved username and enter the team password to access investigations, campaigns, claim packets, and database tools.
               </p>
             </div>
             <div className="grid max-w-2xl gap-3 sm:grid-cols-2">
-              {["jeffgus", "pankajsewal"].map((name) => (
-                <div key={name} className="rounded-lg border border-white/10 bg-white/[0.04] p-4 shadow-xl shadow-black/20 backdrop-blur">
+              {TEAM_USERS.map((user) => (
+                <button
+                  key={user.username}
+                  type="button"
+                  onClick={() => setIdentifier(user.username)}
+                  className={`rounded-lg border p-4 text-left shadow-xl shadow-black/20 backdrop-blur transition ${
+                    identifier.toLowerCase() === user.username
+                      ? "border-orange-300/60 bg-orange-500/15"
+                      : "border-white/10 bg-white/[0.04] hover:border-white/25 hover:bg-white/[0.07]"
+                  }`}
+                >
                   <div className="flex items-center gap-3">
                     <div className="flex h-9 w-9 items-center justify-center rounded-md bg-orange-500/15 text-orange-200">
                       <UserRound className="h-4 w-4" />
                     </div>
                     <div>
-                      <div className="text-sm font-semibold text-white">{name}</div>
-                      <div className="text-xs text-neutral-400">User privilege</div>
+                      <div className="text-sm font-semibold text-white">{user.username}</div>
+                      <div className="text-xs text-neutral-400">{user.email}</div>
                     </div>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           </div>
@@ -177,20 +119,33 @@ export function TeamAuthGate({ children }: TeamAuthGateProps) {
           <form onSubmit={handleSignIn} className="rounded-lg border border-white/10 bg-neutral-900/55 p-6 shadow-2xl shadow-black/40 backdrop-blur-xl">
             <div className="space-y-2">
               <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-white/10 text-orange-200">
-                <Mail className="h-5 w-5" />
+                <KeyRound className="h-5 w-5" />
               </div>
               <h2 className="text-2xl font-semibold text-white">Sign in</h2>
-              <p className="text-sm text-neutral-400">Approved users receive a secure email link from Supabase.</p>
+              <p className="text-sm text-neutral-400">Use an approved username and the team password.</p>
             </div>
 
             <div className="mt-6 space-y-2">
-              <Label htmlFor="team-identifier" className="text-neutral-200">Username or email</Label>
+              <Label htmlFor="team-identifier" className="text-neutral-200">Username</Label>
               <Input
                 id="team-identifier"
                 autoComplete="username"
-                placeholder="jeffgus or Jeffgus@gmail.com"
+                placeholder="jeffgus or pankajsewal"
                 value={identifier}
                 onChange={(event) => setIdentifier(event.target.value)}
+                className="border-white/10 bg-black/30 text-white placeholder:text-neutral-500"
+              />
+            </div>
+
+            <div className="mt-4 space-y-2">
+              <Label htmlFor="team-password" className="text-neutral-200">Password</Label>
+              <Input
+                id="team-password"
+                type="password"
+                autoComplete="current-password"
+                placeholder="Enter team password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
                 className="border-white/10 bg-black/30 text-white placeholder:text-neutral-500"
               />
             </div>
@@ -202,16 +157,9 @@ export function TeamAuthGate({ children }: TeamAuthGateProps) {
               </Alert>
             )}
 
-            {message && (
-              <Alert className="mt-4 border-emerald-500/30 bg-emerald-500/10 text-emerald-100">
-                <AlertTitle>Check your inbox</AlertTitle>
-                <AlertDescription>{message}</AlertDescription>
-              </Alert>
-            )}
-
-            <Button type="submit" disabled={submitting} className="mt-6 w-full">
-              {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
-              Send sign-in link
+            <Button type="submit" className="mt-6 w-full">
+              <KeyRound className="mr-2 h-4 w-4" />
+              Unlock workspace
             </Button>
           </form>
         </div>
