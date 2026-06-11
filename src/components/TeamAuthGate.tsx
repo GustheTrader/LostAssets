@@ -1,15 +1,15 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { KeyRound, Loader2, LogOut, Mail, ShieldCheck, UserRound } from "lucide-react";
-import type { Session } from "@supabase/supabase-js";
+import type { Session, SupabaseClient } from "@supabase/supabase-js";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
 import {
-  authClient,
+  createTeamAuthClient,
   findAllowedTeamUser,
   getSessionTeamUser,
-  isSupabaseAuthConfigured,
+  loadSupabaseAuthConfig,
   type TeamUser,
 } from "../services/teamAuth";
 
@@ -25,36 +25,52 @@ export function TeamAuthGate({ children }: TeamAuthGateProps) {
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [authClient, setAuthClient] = useState<SupabaseClient | null>(null);
 
   useEffect(() => {
-    if (!authClient) {
-      setLoading(false);
-      return;
-    }
+    let active = true;
+    let unsubscribe: (() => void) | undefined;
 
-    authClient.auth.getSession().then(({ data }) => {
+    const initializeAuth = async () => {
+      const config = await loadSupabaseAuthConfig();
+      if (!active) return;
+
+      if (!config) {
+        setLoading(false);
+        return;
+      }
+
+      const client = createTeamAuthClient(config);
+      setAuthClient(client);
+
+      const { data } = await client.auth.getSession();
+      if (!active) return;
       const nextTeamUser = getSessionTeamUser(data.session);
       setSession(data.session);
       setTeamUser(nextTeamUser);
       if (data.session && !nextTeamUser) {
-        authClient.auth.signOut();
+        client.auth.signOut();
         setError("This Supabase account is not approved for LostAssets.");
       }
       setLoading(false);
-    });
 
-    const { data } = authClient.auth.onAuthStateChange((_event, nextSession) => {
-      const nextTeamUser = getSessionTeamUser(nextSession);
-      setSession(nextSession);
-      setTeamUser(nextTeamUser);
-      if (nextSession && !nextTeamUser) {
-        authClient.auth.signOut();
-        setError("This Supabase account is not approved for LostAssets.");
-      }
-    });
+      const subscription = client.auth.onAuthStateChange((_event, nextSession) => {
+        const nextTeamUser = getSessionTeamUser(nextSession);
+        setSession(nextSession);
+        setTeamUser(nextTeamUser);
+        if (nextSession && !nextTeamUser) {
+          client.auth.signOut();
+          setError("This Supabase account is not approved for LostAssets.");
+        }
+      });
+      unsubscribe = () => subscription.data.subscription.unsubscribe();
+    };
+
+    initializeAuth();
 
     return () => {
-      data.subscription.unsubscribe();
+      active = false;
+      unsubscribe?.();
     };
   }, []);
 
@@ -63,8 +79,8 @@ export function TeamAuthGate({ children }: TeamAuthGateProps) {
     setError(null);
     setMessage(null);
 
-    if (!authClient || !isSupabaseAuthConfigured) {
-      setError("Supabase Auth is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.");
+    if (!authClient) {
+      setError("Supabase Auth is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY, or SUPABASE_URL and SUPABASE_ANON_KEY on the server.");
       return;
     }
 
