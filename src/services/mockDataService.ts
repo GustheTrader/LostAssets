@@ -47,7 +47,7 @@ export const searchLostAssets = async (query: SearchQuery): Promise<AssetRecord[
             amount: rec.amount,
             holderCompany: rec.company,
             state: rec.state,
-            lastKnownAddress: rec.location,
+            address: rec.location,
             stateId: rec.state_id || rec.stateId
           });
         }
