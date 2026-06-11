@@ -9,4 +9,5 @@ coverage/
 !.env.example
 *.sqlite
 *.sqlite.*
+*.sqlite-*
 agent/04_From_500_To_Beyond/*.csv

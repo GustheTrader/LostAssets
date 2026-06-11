@@ -34,6 +34,11 @@ export interface EnvConfig {
   // AI / Gemini
   GEMINI_API_KEY: string | undefined;
 
+  // Supabase
+  SUPABASE_URL: string | undefined;
+  SUPABASE_PROJECT_ID: string | undefined;
+  SUPABASE_SERVICE_ROLE_KEY: string | undefined;
+
   // Scraper Proxy Configurations
   SCRAPER_MODE: "axios" | "scraperapi" | "zenrows" | "brightdata" | "browser";
   SCRAPERAPI_KEY: string | undefined;
@@ -76,6 +81,9 @@ export const config: EnvConfig = {
   TWILIO_TOKEN: getStr("TWILIO_TOKEN"),
   TWILIO_PHONE: getStr("TWILIO_PHONE"),
   GEMINI_API_KEY: getStr("GEMINI_API_KEY"),
+  SUPABASE_URL: getStr("SUPABASE_URL"),
+  SUPABASE_PROJECT_ID: getStr("SUPABASE_PROJECT_ID"),
+  SUPABASE_SERVICE_ROLE_KEY: getStr("SUPABASE_SERVICE_ROLE_KEY"),
 
   SCRAPER_MODE: (getStr("SCRAPER_MODE") || "axios") as any,
   SCRAPERAPI_KEY: getStr("SCRAPERAPI_KEY"),

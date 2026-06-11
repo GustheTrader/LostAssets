@@ -19,6 +19,12 @@ create table if not exists public.assets (
   source_row bigint,
   raw_record jsonb,
   claimed_at timestamptz,
+  is_estate boolean default false,
+  heir_notes text default '',
+  priority_tier integer default 3,
+  confirmed_deceased boolean default false,
+  death_date text,
+  is_business boolean default false,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
@@ -50,6 +56,7 @@ create table if not exists public.leads (
   source text,
   verified boolean default false,
   notes text,
+  last_enriched_at timestamptz,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
@@ -65,6 +72,7 @@ create table if not exists public.campaigns (
   target_filter jsonb,
   schedule_cron text,
   next_run_at timestamptz,
+  client_id text,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
@@ -124,6 +132,20 @@ create table if not exists public.audit_log (
 
 create index if not exists idx_audit_entity on public.audit_log (entity_type, entity_id);
 
+create table if not exists public.relatives (
+  id bigserial primary key,
+  lead_id bigint references public.leads(id) on delete cascade,
+  asset_id bigint references public.assets(id) on delete set null,
+  full_name text not null,
+  relation_type text,
+  confidence numeric default 0.5,
+  source text,
+  created_at timestamptz default now()
+);
+
+create index if not exists idx_relatives_lead on public.relatives (lead_id);
+create index if not exists idx_relatives_asset on public.relatives (asset_id);
+
 create table if not exists public.cases (
   id text primary key,
   name text not null,
@@ -139,3 +161,11 @@ create table if not exists public.case_assets (
   asset_id bigint references public.assets(id) on delete cascade,
   primary key (case_id, asset_id)
 );
+
+select setval(pg_get_serial_sequence('public.assets', 'id'), coalesce((select max(id) from public.assets), 1), true);
+select setval(pg_get_serial_sequence('public.leads', 'id'), coalesce((select max(id) from public.leads), 1), true);
+select setval(pg_get_serial_sequence('public.campaigns', 'id'), coalesce((select max(id) from public.campaigns), 1), true);
+select setval(pg_get_serial_sequence('public.outreach', 'id'), coalesce((select max(id) from public.outreach), 1), true);
+select setval(pg_get_serial_sequence('public.regulations', 'id'), coalesce((select max(id) from public.regulations), 1), true);
+select setval(pg_get_serial_sequence('public.audit_log', 'id'), coalesce((select max(id) from public.audit_log), 1), true);
+select setval(pg_get_serial_sequence('public.relatives', 'id'), coalesce((select max(id) from public.relatives), 1), true);

@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "supabase:import": "tsx execution/importSupabaseCsv.ts"
+    "supabase:import": "tsx execution/importSupabaseCsv.ts",
+    "supabase:migrate-sqlite": "tsx execution/migrateSqliteToSupabase.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",

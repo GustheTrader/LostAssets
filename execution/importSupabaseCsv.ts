@@ -175,7 +175,8 @@ async function main() {
 
   const supabaseUrl = process.env.SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!args.dryRun && (!supabaseUrl || !serviceRoleKey)) {
+  const hasServiceRoleKey = serviceRoleKey && serviceRoleKey !== "YOUR_SUPABASE_SERVICE_ROLE_KEY";
+  if (!args.dryRun && (!supabaseUrl || !hasServiceRoleKey)) {
     throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required unless --dry-run is used.");
   }
 
