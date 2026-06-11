@@ -8,6 +8,7 @@ export interface AssetRecord {
   type: AssetType;
   holderCompany: string;
   amount: number;
+  stateId?: string;
 }
 
 export interface Relative {
