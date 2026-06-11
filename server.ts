@@ -5,12 +5,22 @@ import cors from "cors";
 import axios from "axios";
 import * as cheerio from "cheerio";
 import { createServer as createViteServer } from "vite";
+import * as dotenv from "dotenv";
+
+dotenv.config();
 
 const app = express();
 const PORT = 3000;
 
 app.use(cors());
 app.use(express.json());
+
+app.get("/api/auth/config", (_req, res) => {
+  res.json({
+    supabaseUrl: process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "",
+    supabaseAnonKey: process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || "",
+  });
+});
 
 // Initialize SQLite database
 const db = new Database("data.sqlite");
