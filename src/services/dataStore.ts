@@ -34,3 +34,7 @@ export const deleteCase = (id: string) => {
   const filtered = cases.filter(c => c.id !== id);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
 };
+
+export const saveAllCases = (cases: SavedCase[]) => {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(cases));
+};

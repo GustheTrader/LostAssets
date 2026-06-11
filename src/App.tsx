@@ -1,5 +1,12 @@
 import { useState, useEffect } from "react";
-import { Search, MapPin, DollarSign, Users, Mail, Loader2, FileText, AlertCircle, Copy, Check, Filter, Database, BookOpen, ChevronRight, Save, ChevronUp, ChevronDown, AlertTriangle, CheckCircle, Network, Radar, Terminal, UserSearch } from "lucide-react";
+import { 
+  Search, MapPin, DollarSign, Users, Mail, Loader2, FileText, 
+  AlertCircle, Copy, Check, Filter, Database, BookOpen, ChevronRight, 
+  Save, ChevronUp, ChevronDown, AlertTriangle, CheckCircle, Network, 
+  Radar, Terminal, UserSearch, Award, Shield, UserCheck, Layers, 
+  Megaphone, Send, Upload, Scale, Folder, Coins, ShieldAlert, CheckCircle2, Globe,
+  CheckSquare, Square, History
+} from "lucide-react";
 import { cn } from "./lib/utils";
 import { Button, buttonVariants } from "./components/ui/button";
 import { Input } from "./components/ui/input";
@@ -14,11 +21,17 @@ import { Label } from "./components/ui/label";
 import { Textarea } from "./components/ui/textarea";
 import { RichTextEditor } from "./components/RichTextEditor";
 import { TraceConsole } from "./components/TraceConsole";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+
+import { ClientIntake } from "./components/ClientIntake";
+import { CaliforniaSpecialTools } from "./components/CaliforniaSpecialTools";
+import { OutreachAndDataTools } from "./components/OutreachAndDataTools";
+import { LeadHistoryModal } from "./components/LeadHistoryModal";
 
 import { AssetRecord, Relative, SavedCase, SearchQuery } from "./types";
 import { searchLostAssets, trackRelatives, AVAILABLE_STATES, ASSET_TYPES } from "./services/mockDataService";
 import { generateOutreachEmail } from "./services/geminiService";
-import { saveCase, getSavedCases, deleteCase } from "./services/dataStore";
+import { saveCase, getSavedCases, deleteCase, saveAllCases } from "./services/dataStore";
 import { STATE_RULES, StateRule } from "./services/stateRulesService";
 
 export function useDebounce<T>(value: T, delay: number): T {
@@ -34,13 +47,28 @@ export function useDebounce<T>(value: T, delay: number): T {
   return debouncedValue;
 }
 
+// Category Name automated suggestion helper function
+export function recommendCategoryName(fName: string, lName: string, state: string, mode: "identity" | "highValue"): string {
+  const stateLabel = state ? state : "All States";
+  if (mode === "highValue" || (!fName.trim() && !lName.trim())) {
+    return `High-Value Claims (${stateLabel})`;
+  }
+  const fullName = [fName.trim(), lName.trim()].filter(Boolean).join(" ");
+  return `${fullName} Claims (${stateLabel})`;
+}
+
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"search" | "database" | "rules" | "scraper" | "trace">("search");
+  const [activeTab, setActiveTab] = useState<
+    "client_intake" | "search_workbench" | "saved_cases" | "ca_bundling" | 
+    "asset_combiner" | "ca_investigator_hub" | "campaigns" | "trace_osint" | 
+    "multistate_search" | "hermes" | "asset_db" | "regulations" | "import_csv"
+  >("client_intake");
+
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   
   const [searchMode, setSearchMode] = useState<"identity" | "highValue">("identity");
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
+  const [firstName, setFirstName] = useState("Thomson Diggs");
+  const [lastName, setLastName] = useState("Company");
   const [emailAddress, setEmailAddress] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [targetState, setTargetState] = useState("");
@@ -52,25 +80,11 @@ export default function App() {
   const [relatives, setRelatives] = useState<Relative[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  // Scraper State
-  const [scrapeFirstName, setScrapeFirstName] = useState("");
-  const [scrapeLastName, setScrapeLastName] = useState("");
-  const [scrapeState, setScrapeState] = useState("");
-  const [isScraping, setIsScraping] = useState(false);
-  const [scrapedRecords, setScrapedRecords] = useState<any[]>([]);
-  const [scrapeMessage, setScrapeMessage] = useState<{ text: string, type: "success" | "warning" | "error" } | null>(null);
+  // Dynamic Custom Imported CSV Records state
+  const [customImportedRecords, setCustomImportedRecords] = useState<any[]>([]);
 
-  useEffect(() => {
-    if (activeTab === "scraper") {
-      fetch("/api/records")
-        .then((res) => res.json())
-        .then((data) => {
-          if (Array.isArray(data)) setScrapedRecords(data);
-        })
-        .catch((err) => console.error("Failed to load records", err));
-    }
-  }, [activeTab]);
-
+  // Mobile navigation drawer toggle
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Database / Saved Cases
   const [savedCases, setSavedCases] = useState<SavedCase[]>([]);
@@ -78,9 +92,21 @@ export default function App() {
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [dbStateFilter, setDbStateFilter] = useState("");
   
+  // Interactive CRM notes and claim number edit state mapping
+  const [caseNotesEditing, setCaseNotesEditing] = useState<Record<string, string>>({});
+  const [caseClaimNumbersEditing, setCaseClaimNumbersEditing] = useState<Record<string, string>>({});
+  
   useEffect(() => {
     setSavedCases(getSavedCases());
   }, []);
+
+  // Set suggested name dynamically when open save case dialog
+  useEffect(() => {
+    if (saveDialogOpen) {
+      const suggestion = recommendCategoryName(firstName, lastName, targetState, searchMode);
+      setSaveCategoryName(suggestion);
+    }
+  }, [saveDialogOpen]);
 
   // Email Drafting State
   const [selectedRelative, setSelectedRelative] = useState<Relative | null>(null);
@@ -120,7 +146,24 @@ export default function App() {
           };
 
       // 1. Search for assets
-      const foundAssets = await searchLostAssets(query);
+      let foundAssets = await searchLostAssets(query);
+
+      // Intercept with our parsed CSV custom uploaded records!
+      if (customImportedRecords.length > 0) {
+        const queryFirst = firstName.trim().toLowerCase();
+        const queryLast = lastName.trim().toLowerCase();
+        const queryState = targetState || "";
+
+        const matches = customImportedRecords.filter(rec => {
+          const matchesFirst = !queryFirst || rec.name.toLowerCase().includes(queryFirst);
+          const matchesLast = !queryLast || rec.name.toLowerCase().includes(queryLast);
+          const matchesState = !queryState || rec.state === queryState;
+          return (matchesFirst || matchesLast) && matchesState;
+        });
+
+        foundAssets = [...matches, ...foundAssets];
+      }
+
       setAssets(foundAssets);
 
       // 2. If assets found, run skip trace for relatives
@@ -145,7 +188,6 @@ export default function App() {
   };
 
   useEffect(() => {
-    // Determine if we should run an auto-search
     if (searchMode === "identity") {
       if (debouncedFirstName.trim() || debouncedLastName.trim() || debouncedEmail.trim()) {
         runSearch(false);
@@ -189,16 +231,34 @@ export default function App() {
   };
 
   const handleSaveCase = () => {
-    if (!saveCategoryName.trim()) return;
+    let finalCategoryName = saveCategoryName.trim();
+    if (!finalCategoryName) {
+      finalCategoryName = recommendCategoryName(firstName, lastName, targetState, searchMode);
+    }
+
     const query = searchMode === "highValue" 
         ? { generalHighValue: true, targetState: targetState || undefined, assetType: assetType || undefined }
         : { firstName: firstName.trim(), lastName: lastName.trim(), email: emailAddress.trim(), phone: phoneNumber.trim(), targetState: targetState || undefined, assetType: assetType || undefined };
         
-    const newCase = saveCase(saveCategoryName, query, assets, relatives);
+    const newCase = saveCase(finalCategoryName, query, assets, relatives);
     setSavedCases([newCase, ...savedCases]);
     setSaveDialogOpen(false);
     setSaveCategoryName("");
-    setActiveTab("database");
+    setActiveTab("saved_cases");
+  };
+
+  const handleSaveConsolidatedCase = (caseObj: any) => {
+    setSavedCases(prev => {
+      const exists = prev.some(c => c.id === caseObj.id);
+      let nextCases: SavedCase[];
+      if (exists) {
+        nextCases = prev.map(c => c.id === caseObj.id ? caseObj : c);
+      } else {
+        nextCases = [caseObj, ...prev];
+      }
+      saveAllCases(nextCases);
+      return nextCases;
+    });
   };
 
   const handleDeleteCase = (id: string) => {
@@ -209,13 +269,12 @@ export default function App() {
   const copyToClipboard = async () => {
     try {
       const htmlBlob = new Blob([draftedEmail], { type: "text/html" });
-      const textBlob = new Blob([draftedEmail.replace(/<[^>]+>/g, '')], { type: "text/plain" }); // Simple fallback text
+      const textBlob = new Blob([draftedEmail.replace(/<[^>]+>/g, '')], { type: "text/plain" });
       const data = [new ClipboardItem({ "text/html": htmlBlob, "text/plain": textBlob })];
       await navigator.clipboard.write(data);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
-      // Fallback
       const tempEl = document.createElement("div");
       tempEl.innerHTML = draftedEmail;
       navigator.clipboard.writeText(tempEl.innerText || tempEl.textContent || "");
@@ -225,565 +284,1165 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/20 via-neutral-950 to-neutral-950 text-neutral-100 font-sans">
-      {/* Header */}
-      <header className="bg-neutral-950/80 backdrop-blur-md border-b border-neutral-800 sticky top-0 z-10 px-6">
-        <div className="max-w-7xl mx-auto flex items-center justify-between h-16">
-          <div className="flex items-center space-x-2">
-            <FileText className="w-6 h-6 text-orange-500" />
-            <h1 className="text-xl font-semibold tracking-tight mr-8 text-neutral-50">Lost Asset Locator</h1>
-            
-            <nav className="hidden md:flex space-x-1">
-               <button 
-                  onClick={() => setActiveTab("search")}
-                  className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${activeTab === "search" ? "bg-orange-500/100/10 text-orange-400" : "text-neutral-400 hover:bg-neutral-900"}`}
-               >
-                  <Search className="w-4 h-4 inline-block mr-2" />
-                  Search Workbench
-               </button>
-               <button 
-                  onClick={() => setActiveTab("database")}
-                  className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${activeTab === "database" ? "bg-orange-500/100/10 text-orange-400" : "text-neutral-400 hover:bg-neutral-900"}`}
-               >
-                  <Database className="w-4 h-4 inline-block mr-2" />
-                  Saved Categories
-               </button>
-               <button 
-                  onClick={() => setActiveTab("rules")}
-                  className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${activeTab === "rules" ? "bg-orange-500/100/10 text-orange-400" : "text-neutral-400 hover:bg-neutral-900"}`}
-               >
-                  <BookOpen className="w-4 h-4 inline-block mr-2" />
-                  State Rules
-               </button>
-               <button 
-                  onClick={() => setActiveTab("trace")}
-                  className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${activeTab === "trace" ? "bg-orange-500/100/10 text-orange-400" : "text-neutral-400 hover:bg-neutral-900"}`}
-               >
-                  <Radar className="w-4 h-4 inline-block mr-2" />
-                  Trace & OSINT
-               </button>
-            </nav>
+    <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans">
+      
+      {/* 1. LEFT SIDEBAR (Desktop layout) */}
+      <aside className="hidden md:flex flex-col w-64 fixed inset-y-0 left-0 bg-[#09090b] border-r border-neutral-900 z-20">
+        
+        {/* Sidebar Header Title lockup */}
+        <div className="p-5 border-b border-neutral-900 flex items-center space-x-3 bg-neutral-950/40">
+          <div className="bg-orange-500/15 p-2 rounded-lg border border-orange-500/30">
+            <Award className="w-5 h-5 text-orange-400 animate-pulse" />
           </div>
-          <Badge variant="outline" className="text-xs uppercase tracking-wider font-mono text-neutral-400 border-neutral-800">
-            Multi-State Region
-          </Badge>
+          <div>
+            <div className="text-sm font-bold tracking-wider text-neutral-100 font-sans">SOVEREIGN ASSET</div>
+            <div className="text-[9px] uppercase tracking-widest text-neutral-400 font-bold font-mono">RECOVERY AGENCY</div>
+          </div>
         </div>
+
+        {/* Sidebar Navigation */}
+        <div className="flex-1 overflow-y-auto py-5 px-3 space-y-6 scrollbar-thin">
+          
+          {/* Section A: INVESTIGATIONS */}
+          <div className="space-y-1">
+            <div className="text-[10px] uppercase tracking-widest text-neutral-500 font-bold px-3 mb-2.5 font-mono">
+              INVESTIGATIONS
+            </div>
+            
+            <button
+              onClick={() => setActiveTab("client_intake")}
+              className={cn(
+                "w-full flex items-center space-x-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all text-left",
+                activeTab === "client_intake" 
+                  ? "bg-orange-500/10 text-orange-400 border border-orange-500/20 shadow-sm" 
+                  : "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900/40"
+              )}
+            >
+              <UserCheck className={cn("w-4 h-4", activeTab === "client_intake" ? "text-orange-500" : "text-neutral-500")} />
+              <span>CLIENT INTAKE</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab("search_workbench")}
+              className={cn(
+                "w-full flex items-center space-x-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all text-left",
+                activeTab === "search_workbench" 
+                  ? "bg-orange-500/10 text-orange-400 border border-orange-500/20 shadow-sm" 
+                  : "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900/40"
+              )}
+            >
+              <Search className={cn("w-4 h-4", activeTab === "search_workbench" ? "text-orange-500" : "text-neutral-500")} />
+              <span>SEARCH WORKBENCH</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab("saved_cases")}
+              className={cn(
+                "w-full flex items-center space-x-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all text-left",
+                activeTab === "saved_cases" 
+                  ? "bg-orange-500/10 text-orange-400 border border-orange-500/20 shadow-sm" 
+                  : "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900/40"
+              )}
+            >
+              <Folder className={cn("w-4 h-4", activeTab === "saved_cases" ? "text-orange-500" : "text-neutral-500")} />
+              <span>SAVED CASES</span>
+            </button>
+          </div>
+
+          {/* Section B: CALIFORNIA TOOLS */}
+          <div className="space-y-1">
+            <div className="text-[10px] uppercase tracking-widest text-neutral-500 font-bold px-3 mb-2.5 font-mono">
+              CALIFORNIA TOOLS
+            </div>
+
+            <button
+              onClick={() => setActiveTab("ca_bundling")}
+              className={cn(
+                "w-full flex items-center space-x-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all text-left",
+                activeTab === "ca_bundling" 
+                  ? "bg-orange-500/10 text-orange-400 border border-orange-500/20 shadow-sm" 
+                  : "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900/40"
+              )}
+            >
+              <Network className={cn("w-4 h-4", activeTab === "ca_bundling" ? "text-orange-500" : "text-neutral-500")} />
+              <span>CA BUNDLING</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab("asset_combiner")}
+              className={cn(
+                "w-full flex items-center space-x-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all text-left",
+                activeTab === "asset_combiner" 
+                  ? "bg-orange-500/10 text-orange-400 border border-orange-500/20 shadow-sm" 
+                  : "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900/40"
+              )}
+            >
+              <Layers className={cn("w-4 h-4", activeTab === "asset_combiner" ? "text-orange-500" : "text-neutral-500")} />
+              <span>ASSET COMBINER</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab("ca_investigator_hub")}
+              className={cn(
+                "w-full flex items-center space-x-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all text-left",
+                activeTab === "ca_investigator_hub" 
+                  ? "bg-orange-500/10 text-orange-400 border border-orange-500/20 shadow-sm" 
+                  : "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900/40"
+              )}
+            >
+              <UserSearch className={cn("w-4 h-4", activeTab === "ca_investigator_hub" ? "text-orange-500" : "text-neutral-500")} />
+              <span>CA INVESTIGATOR HUB</span>
+            </button>
+          </div>
+
+          {/* Section C: OUTREACH & DATA */}
+          <div className="space-y-1">
+            <div className="text-[10px] uppercase tracking-widest text-neutral-500 font-bold px-3 mb-2.5 font-mono">
+              OUTREACH & DATA
+            </div>
+
+            <button
+              onClick={() => setActiveTab("campaigns")}
+              className={cn(
+                "w-full flex items-center space-x-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all text-left",
+                activeTab === "campaigns" 
+                  ? "bg-orange-500/10 text-orange-400 border border-orange-500/20 shadow-sm" 
+                  : "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900/40"
+              )}
+            >
+              <Megaphone className={cn("w-4 h-4", activeTab === "campaigns" ? "text-orange-500" : "text-neutral-500")} />
+              <span>CAMPAIGNS</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab("trace_osint")}
+              className={cn(
+                "w-full flex items-center space-x-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all text-left",
+                activeTab === "trace_osint" 
+                  ? "bg-orange-500/10 text-orange-400 border border-orange-500/20 shadow-sm" 
+                  : "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900/40"
+              )}
+            >
+              <Radar className={cn("w-4 h-4", activeTab === "trace_osint" ? "text-orange-500" : "text-neutral-500")} />
+              <span>TRACE & OSINT</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab("multistate_search")}
+              className={cn(
+                "w-full flex items-center space-x-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all text-left",
+                activeTab === "multistate_search" 
+                  ? "bg-orange-500/10 text-orange-400 border border-orange-500/20 shadow-sm" 
+                  : "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900/40"
+              )}
+            >
+              <Globe className={cn("w-4 h-4", activeTab === "multistate_search" ? "text-orange-500" : "text-neutral-500")} />
+              <span>MULTI-STATE SEARCH</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab("hermes")}
+              className={cn(
+                "w-full flex items-center space-x-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all text-left",
+                activeTab === "hermes" 
+                  ? "bg-orange-500/10 text-orange-400 border border-orange-500/20 shadow-sm" 
+                  : "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900/40"
+              )}
+            >
+              <Send className={cn("w-4 h-4", activeTab === "hermes" ? "text-orange-500" : "text-neutral-500")} />
+              <span>HERMES</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab("asset_db")}
+              className={cn(
+                "w-full flex items-center space-x-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all text-left",
+                activeTab === "asset_db" 
+                  ? "bg-orange-500/10 text-orange-400 border border-orange-500/20 shadow-sm" 
+                  : "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900/40"
+              )}
+            >
+              <Database className={cn("w-4 h-4", activeTab === "asset_db" ? "text-orange-500" : "text-neutral-500")} />
+              <span>ASSET DB</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab("regulations")}
+              className={cn(
+                "w-full flex items-center space-x-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all text-left",
+                activeTab === "regulations" 
+                  ? "bg-orange-500/10 text-orange-400 border border-orange-500/20 shadow-sm" 
+                  : "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900/40"
+              )}
+            >
+              <Scale className={cn("w-4 h-4", activeTab === "regulations" ? "text-orange-500" : "text-neutral-500")} />
+              <span>REGULATIONS</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab("import_csv")}
+              className={cn(
+                "w-full flex items-center space-x-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all text-left",
+                activeTab === "import_csv" 
+                  ? "bg-orange-500/10 text-orange-400 border border-orange-500/20 shadow-sm" 
+                  : "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900/40"
+              )}
+            >
+              <Upload className={cn("w-4 h-4", activeTab === "import_csv" ? "text-orange-500" : "text-neutral-500")} />
+              <span>IMPORT CSV</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Region panel at bottom-left */}
+        <div className="p-4 border-t border-neutral-900 bg-[#070708] space-y-1.5 font-mono select-none">
+          <div className="text-[9px] uppercase tracking-wider text-neutral-500 font-bold">REGION</div>
+          <div className="flex items-center space-x-2">
+            <span className="text-[10px] bg-orange-500/10 border border-orange-500/30 text-orange-400 px-2 py-0.5 rounded font-bold">
+              CA-ACTIVE
+            </span>
+            <span className="text-[10px] text-neutral-400 font-mono">Multi-State Enabled</span>
+          </div>
+        </div>
+      </aside>
+
+      {/* MOBILE HEADER BAR */}
+      <header className="md:hidden flex items-center justify-between h-14 px-4 border-b border-neutral-900 bg-[#09090b] sticky top-0 z-30">
+        <div className="flex items-center space-x-2">
+          <Award className="w-5 h-5 text-orange-450" />
+          <span className="text-xs font-bold tracking-wider">SOVEREIGN RECOVERY</span>
+        </div>
+        
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          className="border-neutral-800 h-8 px-2 text-xs"
+        >
+          Menu
+        </Button>
       </header>
 
-      <main className="max-w-7xl mx-auto p-6">
-        
-        {activeTab === "search" && (
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
-        
-        {/* Left Sidebar / Search Control */}
-        <div className="md:col-span-4 lg:col-span-3 space-y-6">
-          <Card className="border-neutral-800 shadow-sm rounded-xl overflow-hidden">
-             <div className="bg-neutral-900 px-4 py-3 border-b border-neutral-800">
-                <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-400 flex items-center">
-                  <Search className="w-4 h-4 mr-2" />
-                  New Investigation
-                </h2>
-             </div>
-            <CardContent className="p-4 pt-6">
-              <Tabs value={searchMode} onValueChange={(val) => setSearchMode(val as any)} className="w-full mb-6">
-                <TabsList className="w-full grid grid-cols-2">
-                  <TabsTrigger value="identity">Identity</TabsTrigger>
-                  <TabsTrigger value="highValue">High-Value</TabsTrigger>
-                </TabsList>
-              </Tabs>
-              <form onSubmit={handleSearch} className="space-y-4">
-                {searchMode === "identity" && (
-                  <>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="space-y-2">
-                        <Label htmlFor="firstName" className="text-xs uppercase tracking-wide text-neutral-400">First Name</Label>
-                        <Input 
-                          id="firstName" 
-                          placeholder="John" 
-                          value={firstName}
-                          onChange={(e) => setFirstName(e.target.value)}
-                          className="font-mono text-sm"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="lastName" className="text-xs uppercase tracking-wide text-neutral-400">Last Name</Label>
-                        <Input 
-                          id="lastName" 
-                          placeholder="Doe" 
-                          value={lastName}
-                          onChange={(e) => setLastName(e.target.value)}
-                          className="font-mono text-sm"
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="emailAddress" className="text-xs uppercase tracking-wide text-neutral-400">Email Address (Optional)</Label>
-                      <Input 
-                        id="emailAddress" 
-                        type="email"
-                        placeholder="john@example.com" 
-                        value={emailAddress}
-                        onChange={(e) => setEmailAddress(e.target.value)}
-                        className="font-mono text-sm"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="phoneNumber" className="text-xs uppercase tracking-wide text-neutral-400">Phone (Optional)</Label>
-                      <Input 
-                        id="phoneNumber" 
-                        type="tel"
-                        placeholder="(555) 555-5555" 
-                        value={phoneNumber}
-                        onChange={(e) => setPhoneNumber(e.target.value)}
-                        className="font-mono text-sm"
-                      />
-                    </div>
-                  </>
-                )}
-                {searchMode === "highValue" && (
-                  <div className="text-sm text-neutral-400 mb-4 bg-orange-500/10 p-3 rounded-md border border-orange-500/20">
-                    <Filter className="w-4 h-4 mb-2 text-orange-500" />
-                    General search for high-value claims (&gt;$10,000) across state registries. Name details are not required.
-                  </div>
-                )}
-                
-                <div className="grid grid-cols-2 gap-2 pb-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="targetState" className="text-xs uppercase tracking-wide text-neutral-400">State Filter</Label>
-                    <select 
-                      id="targetState"
-                      value={targetState}
-                      onChange={e => setTargetState(e.target.value)}
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <option value="">All States</option>
-                      {AVAILABLE_STATES.map(st => (
-                        <option key={st} value={st}>{st}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="assetType" className="text-xs uppercase tracking-wide text-neutral-400">Asset Type</Label>
-                    <select 
-                      id="assetType"
-                      value={assetType}
-                      onChange={e => setAssetType(e.target.value)}
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <option value="">All Types</option>
-                      {ASSET_TYPES.map(type => (
-                        <option key={type} value={type}>{type}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <Button 
-                  type="submit" 
-                  disabled={isSearching} 
-                  className="w-full bg-orange-600 hover:bg-orange-700 text-white shadow-sm transition-colors"
-                >
-                  {isSearching ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
-                  Execute Search
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-
-          {/* Quick Stats Panel */}
-          {hasSearched && !isSearching && (
-            <div className="space-y-4">
-              <div className="bg-neutral-900/40 backdrop-blur-md border-neutral-800 p-4 rounded-xl shadow-sm border border-neutral-800">
-                 <div className="text-xs uppercase tracking-wider text-neutral-400 mb-1">Total Assets Found</div>
-                 <div className="text-3xl font-light tracking-tight text-neutral-100">
-                    ${totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                 </div>
-                 <div className="text-sm text-neutral-400 mt-1">{assets.length} claims across selected states</div>
-              </div>
-              <div className="bg-neutral-900/40 backdrop-blur-md border-neutral-800 p-4 rounded-xl shadow-sm border border-neutral-800">
-                 <div className="text-xs uppercase tracking-wider text-neutral-400 mb-1">Skip Trace Results</div>
-                 <div className="text-2xl font-light tracking-tight text-neutral-100">
-                    {relatives.length}
-                 </div>
-                 <div className="text-sm text-neutral-400 mt-1">potential family matches</div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Main Content Area */}
-        <div className="md:col-span-8 lg:col-span-9">
-          {error && (
-            <Alert variant="destructive" className="mb-6">
-              <AlertCircle className="h-4 w-4" />
-              <AlertTitle>Error</AlertTitle>
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-
-          {isSearching && (
-             <div className="h-64 flex flex-col items-center justify-center text-neutral-500 space-y-4">
-                <Loader2 className="h-8 w-8 animate-spin" />
-                <div className="font-mono text-sm uppercase tracking-widest animate-pulse">Querying State Databases...</div>
-             </div>
-          )}
-
-          {!isSearching && !hasSearched && (
-            <div className="h-[60vh] flex flex-col items-center justify-center text-center p-8 border-2 border-dashed border-neutral-800 rounded-xl bg-neutral-900/40 backdrop-blur-md border-neutral-800">
-               <div className="bg-orange-500/10 p-4 rounded-full mb-4">
-                  <Search className="h-8 w-8 text-orange-500" />
-               </div>
-               <h3 className="text-xl font-medium text-neutral-200 mb-2">Initiate Asset Search</h3>
-               <p className="text-neutral-400 max-w-sm">Enter a name to scan available state databases for unclaimed property, or switch to High-Value general mode.</p>
-            </div>
-          )}
-
-          {!isSearching && hasSearched && assets.length === 0 && (
-            <div className="h-64 flex flex-col items-center justify-center text-neutral-400 bg-neutral-900/40 backdrop-blur-md border-neutral-800 border border-neutral-800 rounded-xl">
-               <Search className="h-8 w-8 mb-4 opacity-50" />
-               <p className="text-lg">No assets found for your search criteria in the selected states.</p>
-            </div>
-          )}
-
-          {!isSearching && hasSearched && assets.length > 0 && (
-            <Tabs defaultValue="assets" className="w-full">
-              <TabsList className="mb-6 bg-neutral-900/40 backdrop-blur-md border-neutral-800 border border-neutral-800 p-1">
-                <TabsTrigger value="assets" className="data-[state=active]:bg-orange-500/10 data-[state=active]:text-orange-400 rounded-md">
-                   <DollarSign className="w-4 h-4 mr-2" />
-                   Unclaimed Assets
-                   <Badge variant="secondary" className="ml-2 bg-orange-500/20 text-orange-400">{assets.length}</Badge>
-                </TabsTrigger>
-                <TabsTrigger value="family" className="data-[state=active]:bg-orange-500/10 data-[state=active]:text-orange-400 rounded-md">
-                   <Users className="w-4 h-4 mr-2" />
-                   Skip Tracing
-                   <Badge variant="secondary" className="ml-2 bg-orange-500/20 text-orange-400">{relatives.length}</Badge>
-                </TabsTrigger>
-              </TabsList>
-              
-              <TabsContent value="assets" className="space-y-4">
-                <Card className="border-neutral-800 shadow-sm overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader className="bg-neutral-900/50">
-                        <TableRow className="border-neutral-800">
-                          <TableHead className="font-mono text-xs uppercase text-neutral-400 tracking-wider">Property Name</TableHead>
-                          <TableHead className="font-mono text-xs uppercase text-neutral-400 tracking-wider">Type</TableHead>
-                          <TableHead className="font-mono text-xs uppercase text-neutral-400 tracking-wider">Holder</TableHead>
-                          <TableHead className="font-mono text-xs uppercase text-neutral-400 tracking-wider">Location</TableHead>
-                          <TableHead 
-                            className="font-mono text-xs uppercase text-neutral-400 tracking-wider text-right cursor-pointer hover:text-neutral-100 group"
-                            onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
-                          >
-                            <div className="flex items-center justify-end">
-                              Amount
-                              {sortOrder === "asc" ? <ChevronUp className="w-3 h-3 ml-1" /> : <ChevronDown className="w-3 h-3 ml-1" />}
-                            </div>
-                          </TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {sortedAssets.map((asset) => (
-                          <TableRow key={asset.id} className="hover:bg-orange-500/100/200/10 transition-colors">
-                            <TableCell className="font-medium">{asset.name}</TableCell>
-                            <TableCell>
-                              <Badge variant="outline" className="font-normal text-neutral-400 bg-neutral-900/40 backdrop-blur-md border-neutral-800">
-                                {asset.type}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-neutral-400">{asset.holderCompany}</TableCell>
-                            <TableCell>
-                              <div className="flex items-center text-neutral-400">
-                                <MapPin className="w-3 h-3 mr-1 opacity-50" />
-                                {asset.state}
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-right font-mono font-medium text-green-700">
-                              ${asset.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </Card>
-              </TabsContent>
-
-              <TabsContent value="family" className="space-y-4">
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                   {relatives.map((relative) => (
-                     <Card key={relative.id} className="border-neutral-800 shadow-sm hover:border-orange-300 transition-all group">
-                       <CardHeader className="pb-2">
-                         <div className="flex justify-between items-start">
-                           <div>
-                             <CardTitle className="text-lg flex items-center">
-                               {relative.name}
-                             </CardTitle>
-                             <CardDescription className="flex items-center mt-1 flex-wrap gap-2">
-                               <Badge variant="secondary" className="font-normal text-xs">{relative.relation}</Badge>
-                               <span className="text-xs text-neutral-500">Match: {relative.matchConfidence}%</span>
-                               {relative.relatedTo && (
-                                 <span className="text-xs text-neutral-400 w-full mt-1">Related to: <span className="font-medium text-neutral-300">{relative.relatedTo}</span></span>
-                               )}
-                             </CardDescription>
-                           </div>
-                           <div className="text-xs text-neutral-500 flex items-center">
-                              <MapPin className="w-3 h-3 mr-1" />
-                              {relative.location}
-                           </div>
-                         </div>
-                       </CardHeader>
-                       <CardContent>
-                         <div className="space-y-2 mt-2">
-                            <div className="flex justify-between text-sm">
-                               <span className="text-neutral-400">Phone:</span>
-                               <span className="font-mono text-neutral-300">{relative.phone}</span>
-                            </div>
-                            <div className="flex justify-between text-sm">
-                               <span className="text-neutral-400">Email:</span>
-                               <span className="text-neutral-300 truncate ml-4">{relative.email}</span>
-                            </div>
-                         </div>
-                         <Separator className="my-4" />
-                         <Button 
-                           variant="outline" 
-                           onClick={() => handleDraftEmail(relative)}
-                           className="w-full flex items-center justify-center group-hover:bg-orange-500/100/20 group-hover:text-orange-400 group-hover:border-orange-200 transition-colors"
-                         >
-                           <Mail className="w-4 h-4 mr-2" />
-                           Draft Outreach Email
-                         </Button>
-                       </CardContent>
-                     </Card>
-                   ))}
-                   {relatives.length === 0 && (
-                      <div className="col-span-full p-8 text-center text-neutral-400 border border-neutral-800 rounded-xl bg-neutral-900/40 backdrop-blur-md border-neutral-800">
-                         No relatives found.
-                      </div>
-                   )}
-                 </div>
-              </TabsContent>
-            </Tabs>
-          )}
-
-          {/* Action Bar for Results */}
-          {!isSearching && hasSearched && assets.length > 0 && (
-            <div className="mt-6 flex justify-end">
-               <Button onClick={() => setSaveDialogOpen(true)} className="bg-neutral-100 hover:bg-neutral-300 text-white shadow-sm">
-                  <Save className="w-4 h-4 mr-2" />
-                  Save to Category
-               </Button>
-            </div>
-          )}
-        </div>
+      {/* MOBILE NAVIGATION OVERLAY DRAWER */}
+      {mobileMenuOpen && (
+        <div className="md:hidden fixed inset-0 z-40 bg-neutral-950/95 flex flex-col pt-16 px-4 animate-fade-in overflow-y-auto">
+          <h3 className="text-[10px] tracking-wider text-neutral-500 font-bold mb-4 uppercase">INVESTIGATIONS</h3>
+          <div className="flex flex-col gap-1 pb-6 border-b border-neutral-900">
+            {["client_intake", "search_workbench", "saved_cases"].map((t) => (
+              <button
+                key={t}
+                onClick={() => { setActiveTab(t as any); setMobileMenuOpen(false); }}
+                className="text-left font-mono py-2 text-sm text-neutral-300 hover:text-orange-400 uppercase font-semibold"
+              >
+                {t.replace("_", " ")}
+              </button>
+            ))}
           </div>
-        )}
-        {activeTab === "rules" && (
-          <div className="space-y-6">
-            <h2 className="text-2xl font-light tracking-tight text-neutral-100 mb-6">State Claim Requirements</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-               {Object.values(STATE_RULES).map(rule => (
-                  <Card key={rule.state} className="border-neutral-800">
-                     <CardHeader>
-                        <CardTitle className="flex justify-between items-center">
-                           <span>{rule.state}</span>
-                           <a href={rule.website} target="_blank" rel="noreferrer" className="text-orange-500 hover:text-orange-300 text-sm font-normal flex items-center">
-                              Official Site <ChevronRight className="w-3 h-3 ml-1" />
-                           </a>
-                        </CardTitle>
-                        <CardDescription>{rule.name}</CardDescription>
-                     </CardHeader>
-                     <CardContent className="space-y-4">
-                        <div>
-                           <div className="text-xs uppercase tracking-wider text-neutral-400 mb-1">Process</div>
-                           <p className="text-sm text-neutral-300">{rule.claimProcess}</p>
+
+          <h3 className="text-[10px] tracking-wider text-neutral-500 font-bold my-4 uppercase">CALIFORNIA ACTIONS</h3>
+          <div className="flex flex-col gap-1 pb-6 border-b border-neutral-900">
+            {["ca_bundling", "asset_combiner", "ca_investigator_hub"].map((t) => (
+              <button
+                key={t}
+                onClick={() => { setActiveTab(t as any); setMobileMenuOpen(false); }}
+                className="text-left font-mono py-2 text-sm text-neutral-300 hover:text-orange-400 uppercase font-semibold"
+              >
+                {t.replace("_", " ")}
+              </button>
+            ))}
+          </div>
+
+          <h3 className="text-[10px] tracking-wider text-neutral-500 font-bold my-4 uppercase font-mono">OUTREACH & DATA</h3>
+          <div className="flex flex-col gap-1 pb-8">
+            {["campaigns", "trace_osint", "multistate_search", "hermes", "asset_db", "regulations", "import_csv"].map((t) => (
+              <button
+                key={t}
+                onClick={() => { setActiveTab(t as any); setMobileMenuOpen(false); }}
+                className="text-left font-mono py-2 text-sm text-neutral-300 hover:text-orange-400 uppercase font-semibold"
+              >
+                {t.replace("_", " ")}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 2. MAIN BODY CONTENT AREA */}
+      <main className="md:pl-64 min-h-screen flex flex-col pt-0 md:pt-4">
+        <div className="p-4 md:p-8 max-w-7xl w-full mx-auto space-y-6">
+          
+          {/* A) ACTIVE SUBAREA RENDER ROUTER */}
+
+          {/* 1) CLIENT INTAKE PANEL */}
+          {activeTab === "client_intake" && (
+            <ClientIntake 
+              onWorkflowComplete={(newLead) => {
+                // Swapping dynamically or notifying
+                setSavedCases(getSavedCases());
+              }} 
+            />
+          )}
+
+          {/* 2) SEARCH WORKBENCH */}
+          {activeTab === "search_workbench" && (
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-fade-in">
+              
+              {/* Left filters layout */}
+              <div className="lg:col-span-4 space-y-6">
+                <Card className="border-neutral-900 bg-[#0e0e11] overflow-hidden">
+                   <div className="bg-neutral-905 px-4 py-3 border-b border-neutral-900">
+                      <h2 className="text-xs font-bold uppercase tracking-widest text-neutral-350 flex items-center">
+                        <Search className="w-4 h-4 mr-2 text-orange-500" />
+                        Inquiry filters
+                      </h2>
+                   </div>
+                  <CardContent className="p-4 pt-6">
+                    <Tabs value={searchMode} onValueChange={(val) => setSearchMode(val as any)} className="w-full mb-6">
+                      <TabsList className="w-full grid grid-cols-2 bg-neutral-950 border border-neutral-900 p-1">
+                        <TabsTrigger value="identity">Identity</TabsTrigger>
+                        <TabsTrigger value="highValue">High-Value</TabsTrigger>
+                      </TabsList>
+                    </Tabs>
+                    <form onSubmit={handleSearch} className="space-y-4">
+                      {searchMode === "identity" && (
+                        <>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="space-y-2">
+                              <Label htmlFor="firstName" className="text-[10px] uppercase tracking-wide text-neutral-400 font-bold">First Name</Label>
+                              <Input 
+                                id="firstName" 
+                                placeholder="John" 
+                                value={firstName}
+                                onChange={(e) => setFirstName(e.target.value)}
+                                className="font-mono text-sm bg-neutral-950 border-neutral-850 focus:border-orange-500"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="lastName" className="text-[10px] uppercase tracking-wide text-neutral-400 font-bold">Last Name</Label>
+                              <Input 
+                                id="lastName" 
+                                placeholder="Doe" 
+                                value={lastName}
+                                onChange={(e) => setLastName(e.target.value)}
+                                className="font-mono text-sm bg-neutral-950 border-neutral-850 focus:border-orange-500"
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label htmlFor="emailAddress" className="text-[10px] uppercase tracking-wide text-neutral-400 font-bold">Email Address</Label>
+                            <Input 
+                              id="emailAddress" 
+                              type="email"
+                              placeholder="john@example.com" 
+                              value={emailAddress}
+                              onChange={(e) => setEmailAddress(e.target.value)}
+                              className="font-mono text-sm bg-neutral-950 border-neutral-850 focus:border-orange-500"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label htmlFor="phoneNumber" className="text-[10px] uppercase tracking-wide text-neutral-400 font-bold">Phone (Optional)</Label>
+                            <Input 
+                              id="phoneNumber" 
+                              type="tel"
+                              placeholder="(555) 555-5555" 
+                              value={phoneNumber}
+                              onChange={(e) => setPhoneNumber(e.target.value)}
+                              className="font-mono text-sm bg-neutral-950 border-neutral-850 focus:border-orange-500"
+                            />
+                          </div>
+                        </>
+                      )}
+                      {searchMode === "highValue" && (
+                        <div className="text-xs text-neutral-400 mb-4 bg-orange-500/5 p-3 rounded-lg border border-orange-500/10 leading-relaxed">
+                          <Filter className="w-4 h-4 mb-2 text-orange-500" />
+                          General search scan for multi-state high-value claims (&gt;$10,000) across state Controller registers. Names not compulsory.
                         </div>
-                        <Separator />
-                        <div>
-                           <div className="text-xs uppercase tracking-wider text-neutral-400 mb-2">Required Documents</div>
-                           <ul className="text-sm text-neutral-300 space-y-1 list-disc list-inside">
-                              {rule.documentationRequired.map((doc, i) => (
-                                 <li key={i}>{doc}</li>
+                      )}
+                      
+                      <div className="grid grid-cols-2 gap-2 pb-2">
+                        <div className="space-y-1.5">
+                          <Label htmlFor="targetState" className="text-[10px] uppercase tracking-wide text-neutral-400 font-bold">State</Label>
+                          <select 
+                            id="targetState"
+                            value={targetState}
+                            onChange={e => setTargetState(e.target.value)}
+                            className="flex h-10 w-full rounded-md border border-neutral-850 bg-neutral-950 px-3 py-2 text-sm text-neutral-350 focus:border-orange-500 focus-visible:outline-none"
+                          >
+                            <option value="">All States</option>
+                            {AVAILABLE_STATES.map(st => (
+                              <option key={st} value={st}>{st}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="assetType" className="text-[10px] uppercase tracking-wide text-neutral-400 font-bold">Property Type</Label>
+                          <select 
+                            id="assetType"
+                            value={assetType}
+                            onChange={e => setAssetType(e.target.value)}
+                            className="flex h-10 w-full rounded-md border border-neutral-850 bg-neutral-950 px-3 py-2 text-sm text-neutral-350 focus:border-orange-500 focus-visible:outline-none"
+                          >
+                            <option value="">All Types</option>
+                            {ASSET_TYPES.map(type => (
+                              <option key={type} value={type}>{type}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      <Button 
+                        type="submit" 
+                        disabled={isSearching} 
+                        className="w-full bg-orange-600 hover:bg-orange-700 text-neutral-50 shadow-md font-mono text-xs font-bold h-11"
+                      >
+                        {isSearching ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
+                        EXECUTE REGISTRY SCAN
+                      </Button>
+                    </form>
+                  </CardContent>
+                </Card>
+
+                {/* Left quick metrics panel */}
+                {hasSearched && !isSearching && (
+                  <div className="space-y-4 animate-fade-in font-mono">
+                    <div className="bg-neutral-900/40 border border-neutral-850 p-4 rounded-xl shadow-lg">
+                       <div className="text-[10px] uppercase tracking-wider text-neutral-500 font-bold">Consolidated Recoveries Value</div>
+                       <div className="text-2xl font-semibold tracking-tight text-emerald-400 mt-1">
+                          ${totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                       </div>
+                       <div className="text-[11px] text-neutral-450 mt-1">{assets.length} Claims located state-wide</div>
+                    </div>
+                    <div className="bg-neutral-900/40 border border-neutral-850 p-4 rounded-xl shadow-lg">
+                       <div className="text-[10px] uppercase tracking-wider text-neutral-500 font-bold">Matched Family Relatives</div>
+                       <div className="text-2xl font-semibold tracking-tight text-orange-400 mt-1">
+                          {relatives.length} Matches
+                       </div>
+                       <div className="text-[11px] text-neutral-450 mt-1">Eligible heirs pipeline ready</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Central workbench results columns */}
+              <div className="lg:col-span-8 space-y-6">
+                {error && (
+                  <Alert variant="destructive" className="bg-red-950/20 border-red-900/50 text-red-100">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>Alert</AlertTitle>
+                    <AlertDescription>{error}</AlertDescription>
+                  </Alert>
+                )}
+
+                {isSearching && (
+                   <div className="h-64 flex flex-col items-center justify-center text-neutral-500 space-y-4">
+                      <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
+                      <div className="font-mono text-xs uppercase tracking-widest animate-pulse">Scanning state Controller databases...</div>
+                   </div>
+                )}
+
+                {!isSearching && !hasSearched && (
+                  <div className="h-80 flex flex-col items-center justify-center text-center p-8 border-2 border-dashed border-neutral-850 rounded-xl bg-neutral-900/10">
+                     <div className="bg-orange-500/10 p-4 rounded-full mb-3 border border-orange-500/20">
+                        <Search className="h-6 w-6 text-orange-500" />
+                     </div>
+                     <h3 className="text-base font-semibold text-neutral-200">Start Lead Search Workbench</h3>
+                     <p className="text-neutral-450 text-sm mt-1 max-w-sm">Enter a name keyword to automatically query live databases, or toggle High-Value general mode.</p>
+                  </div>
+                )}
+
+                {!isSearching && hasSearched && assets.length === 0 && (
+                  <div className="h-64 flex flex-col items-center justify-center text-center text-neutral-400 bg-neutral-900/20 border border-neutral-850 rounded-xl">
+                    <AlertTriangle className="h-7 w-7 text-orange-500/50 mb-2" />
+                    <p className="text-sm">No matches located in Controller registries.</p>
+                  </div>
+                )}
+
+                {!isSearching && hasSearched && assets.length > 0 && (
+                  <Tabs defaultValue="claims" className="w-full">
+                    <TabsList className="grid grid-cols-2 bg-neutral-950 p-1 border border-neutral-900 rounded-lg max-w-md">
+                      <TabsTrigger value="claims">Located Assets ({assets.length})</TabsTrigger>
+                      <TabsTrigger value="family">Skip Trace Heirs ({relatives.length})</TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="claims" className="space-y-4 mt-4">
+                      <Card className="border-neutral-900 bg-neutral-950 overflow-hidden">
+                        <div className="overflow-x-auto">
+                          <Table>
+                            <TableHeader className="bg-neutral-900/40">
+                              <TableRow className="border-neutral-900 hover:bg-transparent">
+                                <TableHead className="font-mono text-[10px] uppercase tracking-wider text-neutral-400">Claimant Name</TableHead>
+                                <TableHead className="font-mono text-[10px] uppercase tracking-wider text-neutral-400">Property Type</TableHead>
+                                <TableHead className="font-mono text-[10px] uppercase tracking-wider text-neutral-400 font-bold">Losing Custodian</TableHead>
+                                <TableHead className="font-mono text-[10px] uppercase tracking-wider text-neutral-400">State</TableHead>
+                                <TableHead className="font-mono text-[10px] uppercase tracking-wider text-neutral-400 text-right">Value</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {sortedAssets.map((asset) => (
+                                <TableRow key={asset.id} className="border-neutral-900 hover:bg-neutral-900/40">
+                                  <TableCell className="font-mono text-xs font-semibold text-neutral-100">{asset.name}</TableCell>
+                                  <TableCell className="text-xs text-neutral-400">{asset.type}</TableCell>
+                                  <TableCell className="text-xs text-neutral-450">{asset.holderCompany}</TableCell>
+                                  <TableCell className="font-mono text-xs text-orange-450 font-semibold">{asset.state}</TableCell>
+                                  <TableCell className="text-right font-mono text-xs font-bold text-emerald-450">
+                                    ${asset.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                  </TableCell>
+                                </TableRow>
                               ))}
-                           </ul>
+                            </TableBody>
+                          </Table>
                         </div>
-                        <Separator />
-                        <div>
-                           <div className="text-xs uppercase tracking-wider text-neutral-400 mb-1">Estimated Timeline</div>
-                           <p className="text-sm font-medium text-neutral-300">{rule.timeline}</p>
+                      </Card>
+                    </TabsContent>
+
+                    <TabsContent value="family" className="space-y-4 mt-4">
+                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                         {relatives.map((relative) => (
+                           <Card key={relative.id} className="border-neutral-900 bg-neutral-950 shadow-sm hover:border-neutral-800 transition-all rounded-xl">
+                             <CardHeader className="pb-2">
+                               <div className="flex justify-between items-start">
+                                 <div>
+                                   <CardTitle className="text-sm font-bold flex items-center font-mono">
+                                     {relative.name}
+                                   </CardTitle>
+                                   <CardDescription className="flex items-center mt-1 flex-wrap gap-2">
+                                     <Badge className="bg-neutral-900 text-neutral-400 border border-neutral-800 text-[10px] px-1.5 py-0.5">{relative.relation}</Badge>
+                                     <span className="text-[11px] text-neutral-500 font-mono">Match: {relative.matchConfidence}%</span>
+                                   </CardDescription>
+                                 </div>
+                               </div>
+                             </CardHeader>
+                             <CardContent className="text-xs space-y-3 font-mono">
+                                <div className="space-y-1.5 bg-neutral-900/40 p-2.5 rounded border border-neutral-900">
+                                   <div className="flex justify-between">
+                                      <span className="text-neutral-500">Phone:</span>
+                                      <span className="text-neutral-300">{relative.phone}</span>
+                                   </div>
+                                   <div className="flex justify-between">
+                                      <span className="text-neutral-500">Email:</span>
+                                      <span className="text-neutral-300 truncate max-w-[150px]">{relative.email}</span>
+                                   </div>
+                                </div>
+                                <Button 
+                                  onClick={() => handleDraftEmail(relative)}
+                                  className="w-full bg-orange-600 hover:bg-orange-700 text-neutral-50 font-mono text-[10px] h-8"
+                                >
+                                  <Mail className="w-3.5 h-3.5 mr-1.5" />
+                                  Draft Outreach Letter
+                                </Button>
+                             </CardContent>
+                           </Card>
+                         ))}
+                       </div>
+                    </TabsContent>
+                  </Tabs>
+                )}
+
+                {/* Save to Category Button */}
+                {!isSearching && hasSearched && assets.length > 0 && (
+                  <div className="mt-6 flex justify-end">
+                     <Button onClick={() => setSaveDialogOpen(true)} className="bg-neutral-100 hover:bg-neutral-300 text-neutral-950 font-mono font-bold text-xs h-10 px-5">
+                        <Save className="w-4 h-4 mr-2 text-neutral-900" />
+                        Save leads folder ({assets.length} claims)
+                     </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* 3) SAVED CASES PAGE */}
+          {activeTab === "saved_cases" && (() => {
+             const filteredCases = savedCases.filter(c => dbStateFilter === "" || c.assets.some(a => a.state === dbStateFilter));
+             
+             // Compute total recoverable assets by state
+             const chartDataMap: Record<string, number> = {};
+             filteredCases.forEach(c => {
+                c.assets.forEach(a => {
+                   chartDataMap[a.state] = (chartDataMap[a.state] || 0) + a.amount;
+                });
+             });
+             const chartData = Object.entries(chartDataMap).map(([state, total]) => ({
+                state: state.toUpperCase(),
+                amount: parseFloat(total.toFixed(2))
+             })).sort((a, b) => b.amount - a.amount);
+
+             const totalSum = chartData.reduce((sum, item) => sum + item.amount, 0);
+
+             return (
+             <div className="space-y-6 animate-fade-in">
+               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-neutral-900 pb-4">
+                  <div>
+                    <h2 className="text-2xl font-bold tracking-tight text-neutral-100">Saved Lead Folders</h2>
+                    <p className="text-neutral-450 text-xs text-orange-400">A unified active recovery CRM tracking leads, documents, and executor communications.</p>
+                  </div>
+                  <div className="flex items-center space-x-4">
+                     <select 
+                        value={dbStateFilter}
+                        onChange={e => setDbStateFilter(e.target.value)}
+                        className="flex h-9 rounded-md border border-neutral-850 bg-neutral-950 px-3 py-1 text-xs text-neutral-300"
+                     >
+                        <option value="">All States</option>
+                        {AVAILABLE_STATES.map(st => (
+                          <option key={st} value={st}>{st}</option>
+                        ))}
+                     </select>
+                     <Badge className="bg-neutral-900 text-neutral-400 border border-neutral-850 font-mono">{filteredCases.length} Total</Badge>
+                  </div>
+               </div>
+
+               {/* RECHARTS DATA VISUALIZATION SECTION */}
+               {filteredCases.length > 0 && chartData.length > 0 && (
+                  <Card className="border-neutral-900 bg-neutral-950/40 rounded-xl overflow-hidden shadow-xl">
+                     <CardHeader className="border-b border-neutral-900 bg-neutral-900/10 py-4 px-6">
+                        <div className="flex items-center space-x-3">
+                           <div className="p-2 rounded-lg bg-orange-500/10 text-orange-400 border border-orange-500/10">
+                              <Layers className="w-4 h-4" />
+                           </div>
+                           <div>
+                              <CardTitle className="text-xs font-mono uppercase tracking-wider text-neutral-300">Recoverable Capital Portfolio Analytics</CardTitle>
+                              <CardDescription className="text-[11px] text-neutral-500">Distribution of total recoverable asset values aggregated by state jurisdiction</CardDescription>
+                           </div>
                         </div>
-                        <Separator />
-                        <div>
-                           <div className="text-xs uppercase tracking-wider text-neutral-400 mb-1">Max Finder/Locator Fee</div>
-                           <p className="text-sm font-medium text-neutral-100 bg-orange-500/10 inline-block px-2 py-0.5 rounded border border-orange-500/20">{rule.maxCommission}</p>
+                     </CardHeader>
+                     <CardContent className="p-6">
+                        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                           {/* Highlight metrics panel */}
+                           <div className="space-y-4 flex flex-col justify-center bg-[#070709] border border-neutral-900 p-5 rounded-xl">
+                              <div className="space-y-1">
+                                 <span className="text-[10px] font-mono tracking-wider text-neutral-500 uppercase block">Total Portfolio Value</span>
+                                 <span className="text-2xl font-bold font-mono text-emerald-400 block">
+                                    ${totalSum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                 </span>
+                              </div>
+                              <div className="border-t border-neutral-900/50 my-1"></div>
+                              <div className="space-y-1">
+                                 <span className="text-[10px] font-mono tracking-wider text-neutral-500 uppercase block">Active States Representation</span>
+                                 <span className="text-sm font-semibold font-mono text-neutral-300 block">
+                                    {chartData.length} unique state registry indexes
+                                 </span>
+                              </div>
+                              <div className="border-t border-neutral-900/50 my-1"></div>
+                              <div className="space-y-1">
+                                 <span className="text-[10px] font-mono tracking-wider text-neutral-500 uppercase block">Max Concentration</span>
+                                 <span className="text-xs font-semibold font-mono text-orange-300 block truncate">
+                                    {chartData[0] ? `${chartData[0].state} ($${chartData[0].amount.toLocaleString()})` : "N/A"}
+                                 </span>
+                              </div>
+                           </div>
+
+                           {/* Bar chart canvas */}
+                           <div className="lg:col-span-3 h-64 w-full bg-[#070709] border border-neutral-900 rounded-xl p-4 flex flex-col justify-end">
+                              <div className="w-full h-full min-h-[220px]">
+                                 <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart
+                                       data={chartData}
+                                       margin={{ top: 15, right: 10, left: 10, bottom: 5 }}
+                                    >
+                                       <CartesianGrid strokeDasharray="3 3" stroke="#121215" vertical={false} />
+                                       <XAxis 
+                                          dataKey="state" 
+                                          stroke="#52525b" 
+                                          fontSize={10} 
+                                          tickLine={false} 
+                                          axisLine={false}
+                                          fontFamily="monospace"
+                                       />
+                                       <YAxis 
+                                          stroke="#52525b" 
+                                          fontSize={10} 
+                                          tickLine={false} 
+                                          axisLine={false}
+                                          fontFamily="monospace"
+                                          tickFormatter={(value) => `$${value >= 1e6 ? (value / 1e6).toFixed(1) + 'M' : value >= 1e3 ? (value / 1e3).toFixed(0) + 'K' : value}`}
+                                       />
+                                       <Tooltip 
+                                          cursor={{ fill: 'rgba(249, 115, 22, 0.03)' }}
+                                          contentStyle={{ 
+                                             backgroundColor: '#070709', 
+                                             borderColor: '#1f1f23', 
+                                             borderRadius: '0.5rem',
+                                             fontSize: '11px',
+                                             color: '#d4d4d4',
+                                             fontFamily: 'monospace'
+                                          }}
+                                          formatter={(value: any) => [`$${parseFloat(value).toLocaleString()}`, 'Total Capital']}
+                                          labelFormatter={(label) => `State Jurisdiction: ${label}`}
+                                       />
+                                       <Bar 
+                                          dataKey="amount" 
+                                          fill="#f97316" 
+                                          radius={[4, 4, 0, 0]}
+                                          maxBarSize={45}
+                                       />
+                                    </BarChart>
+                                 </ResponsiveContainer>
+                              </div>
+                           </div>
                         </div>
                      </CardContent>
                   </Card>
-               ))}
+               )}
+
+               {filteredCases.length === 0 ? (
+                  <div className="text-center py-12 px-4 border border-dashed border-neutral-850 rounded-xl bg-neutral-900/10">
+                     <Database className="w-12 h-12 text-neutral-700 mx-auto mb-3" />
+                     <h3 className="text-sm font-semibold text-neutral-300">{savedCases.length === 0 ? "No saved lead categories" : "No folders match filters"}</h3>
+                     <p className="text-neutral-500 mt-1 max-w-sm mx-auto text-xs">
+                       {savedCases.length === 0 ? "Run a workbench search or use the California Bundler tool to compile and drop cases directly into CRM." : "Broaden state select filter coordinates."}
+                     </p>
+                  </div>
+               ) : (
+                  <div className="grid grid-cols-1 gap-6">
+                     {filteredCases.map((savedCase) => {
+                        const totalAmount = savedCase.assets.reduce((sum, a) => sum + a.amount, 0);
+                        return (
+                           <Card key={savedCase.id} className="border-neutral-900 bg-neutral-950 overflow-hidden rounded-xl">
+                              <CardHeader className="bg-neutral-900/40 border-b border-neutral-900 flex flex-row items-center justify-between py-4 px-6">
+                                 <div>
+                                   <CardTitle className="text-sm font-semibold text-orange-400 font-mono">{savedCase.categoryName}</CardTitle>
+                                   <CardDescription className="font-mono text-[10px] mt-1 text-neutral-500">
+                                      Folder Reference: {savedCase.id} | Opened: {new Date(savedCase.createdAt).toLocaleDateString()}
+                                   </CardDescription>
+                                 </div>
+                                 <div className="flex items-center gap-2">
+                                    <Dialog>
+                                       <DialogTrigger className="h-8 px-3 border border-orange-500/25 bg-neutral-950 hover:bg-orange-500/10 text-orange-400 font-mono text-xs flex items-center gap-1.5 rounded-lg cursor-pointer">
+
+                                             <History className="w-3.5 h-3.5" />
+                                             Full History Ledger
+
+                                       </DialogTrigger>
+                                       <LeadHistoryModal 
+                                          savedCase={savedCase} 
+                                          onUpdateCase={(updatedCase) => {
+                                             const updatedCases = savedCases.map(c => c.id === savedCase.id ? updatedCase : c);
+                                             setSavedCases(updatedCases);
+                                             saveAllCases(updatedCases);
+                                          }}
+                                       />
+                                    </Dialog>
+                                    <Button variant="ghost" className="text-red-500 hover:bg-neutral-900/50 hover:text-red-400 font-mono text-xs h-8" onClick={() => handleDeleteCase(savedCase.id)}>Delete Folder</Button>
+                                 </div>
+                              </CardHeader>
+                              <CardContent className="p-0">
+                                 <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-neutral-900">
+                                    <div className="p-6">
+                                       <div className="text-[10px] uppercase tracking-wider text-neutral-500 font-mono">Consolidated Capital Value</div>
+                                       <div className="text-2xl font-semibold text-emerald-400 font-mono mt-1">${totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+                                       <div className="text-xs text-neutral-400 mt-1">{savedCase.assets.length} identified claims located</div>
+                                    </div>
+                                    <div className="p-6 md:col-span-2 space-y-3">
+                                       <div className="font-semibold text-neutral-300 text-[10px] uppercase tracking-wider font-mono">Registry Indexes Summary</div>
+                                       <div className="flex flex-wrap gap-2">
+                                          {Array.from(new Set(savedCase.assets.map(a => a.state))).map(state => {
+                                             const stateAssets = savedCase.assets.filter(a => a.state === state);
+                                             const stateTotal = stateAssets.reduce((s, a) => s + a.amount, 0);
+                                             return (
+                                                <Dialog key={state}>
+                                                   <DialogTrigger className={cn(buttonVariants({ variant: "outline" }), "h-auto py-2 px-3 border-neutral-850 bg-neutral-900/20 hover:bg-neutral-900 flex flex-col items-start gap-1")}>
+                                                         <span className="font-bold text-neutral-200 text-xs font-mono">{state} Code</span>
+                                                         <span className="text-[10px] text-neutral-500">{stateAssets.length} Claims | ${stateTotal.toLocaleString()}</span>
+                                                   </DialogTrigger>
+                                                   <DialogContent className="max-w-2xl bg-neutral-950 text-neutral-200 border-neutral-850">
+                                                      <DialogHeader>
+                                                         <DialogTitle className="font-mono text-orange-400">{state} Claims Summary Matrix</DialogTitle>
+                                                         <DialogDescription className="text-neutral-450">{savedCase.categoryName}</DialogDescription>
+                                                      </DialogHeader>
+                                                      <div className="my-4 overflow-x-auto border border-neutral-900 rounded">
+                                                         <Table>
+                                                            <TableHeader className="bg-neutral-900/60">
+                                                               <TableRow className="border-neutral-900">
+                                                                  <TableHead className="font-mono text-[9px] uppercase px-3 py-2">Holder Custodian</TableHead>
+                                                                  <TableHead className="font-mono text-[9px] uppercase px-3 py-2">Claimant Name</TableHead>
+                                                                  <TableHead className="font-mono text-[9px] uppercase px-3 py-2">Type</TableHead>
+                                                                  <TableHead className="font-mono text-[9px] uppercase px-3 py-2 text-right">Amount</TableHead>
+                                                               </TableRow>
+                                                            </TableHeader>
+                                                            <TableBody>
+                                                               {stateAssets.map(asset => (
+                                                                  <TableRow key={asset.id} className="border-neutral-900">
+                                                                     <TableCell className="text-xs px-3 py-2">{asset.holderCompany}</TableCell>
+                                                                     <TableCell className="font-medium text-xs px-3 py-2">{asset.name}</TableCell>
+                                                                     <TableCell className="text-xs px-3 py-2">{asset.type || "Cash Asset"}</TableCell>
+                                                                     <TableCell className="text-right font-mono text-emerald-450 font-bold px-3 py-2">${asset.amount.toLocaleString()}</TableCell>
+                                                                  </TableRow>
+                                                               ))}
+                                                            </TableBody>
+                                                         </Table>
+                                                      </div>
+                                                   </DialogContent>
+                                                </Dialog>
+                                             );
+                                          })}
+                                       </div>
+                                    </div>
+                                 </div>
+
+                                 {/* EXPANDED CRM WORKSPACE */}
+                                 <div className="border-t border-neutral-900 bg-[#070709] p-6 space-y-6">
+                                    <div className="flex flex-wrap items-center gap-2 border-b border-neutral-900/50 pb-3">
+                                       <span className="px-2 py-0.5 text-[10px] font-mono rounded bg-orange-500/10 text-orange-400 font-semibold border border-orange-500/20">CRM RECOVERY WORKSPACE</span>
+                                       <span className="text-xs font-mono text-neutral-450">Track claim recovery stages, checklists, and communication history logs.</span>
+                                    </div>
+
+                                    {/* PROGRESS TRACKER */}
+                                    <div className="space-y-2">
+                                       <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-400 block">Claim Recovery Stage Pipeline</span>
+                                       <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                                          {["Lead", "Intake", "Evidence", "Submitted", "Review", "Paid"].map((stage) => {
+                                             const activeStage = savedCase.status || "Lead";
+                                             const isCurrent = activeStage === stage;
+                                             const stageColors: Record<string, string> = {
+                                                Lead: "bg-blue-500/20 text-blue-300 border-blue-500/40",
+                                                Intake: "bg-purple-500/20 text-purple-300 border-purple-500/40",
+                                                Evidence: "bg-yellow-500/15 text-yellow-250 border-yellow-500/30",
+                                                Submitted: "bg-indigo-500/20 text-indigo-300 border-indigo-500/40",
+                                                Review: "bg-orange-500/20 text-orange-300 border-orange-500/35",
+                                                Paid: "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                                             };
+                                             return (
+                                                <button
+                                                   key={stage}
+                                                   onClick={() => {
+                                                      const oldStage = savedCase.status || "Lead";
+                                                      const updatedCases = savedCases.map(c => {
+                                                         if (c.id === savedCase.id) {
+                                                            return {
+                                                               ...c,
+                                                               status: stage as any,
+                                                               timeline: [
+                                                                  ...(c.timeline || []),
+                                                                  { date: new Date().toLocaleDateString(), stage: `${stage} Stage`, desc: `Case status manually changed from ${oldStage} to ${stage}.` }
+                                                               ]
+                                                            };
+                                                         }
+                                                         return c;
+                                                      });
+                                                      setSavedCases(updatedCases);
+                                                      saveAllCases(updatedCases);
+                                                   }}
+                                                   className={`py-2 px-1 text-center rounded-lg text-[11px] font-bold border transition-all ${
+                                                      isCurrent 
+                                                         ? `${stageColors[stage] || "bg-orange-500/20 text-orange-350 border-orange-500"} scale-102 ring-1 ring-orange-500/20`
+                                                         : "bg-neutral-900/50 text-neutral-450 border-neutral-900 hover:bg-neutral-850 hover:text-neutral-200"
+                                                   }`}
+                                                >
+                                                   {isCurrent && "● "} {stage}
+                                                </button>
+                                             )
+                                          })}
+                                       </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pt-2">
+                                       {/* LEFT OUTREACH WORKSPACE */}
+                                       <div className="lg:col-span-6 space-y-4">
+                                          <div className="bg-neutral-900/40 p-4 rounded-xl border border-neutral-900 space-y-3">
+                                             <span className="text-[10px] uppercase font-mono tracking-wider text-neutral-450 block">State Claim Reference Details</span>
+                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                <div className="space-y-1">
+                                                   <span className="text-[10px] text-neutral-500 font-mono tracking-wider uppercase block">Claim Number ID</span>
+                                                   <Input
+                                                      type="text"
+                                                      placeholder="e.g. CA-4927-10%"
+                                                      value={caseClaimNumbersEditing[savedCase.id] !== undefined ? caseClaimNumbersEditing[savedCase.id] : (savedCase.claimNumber || "")}
+                                                      onChange={(e) => setCaseClaimNumbersEditing({
+                                                         ...caseClaimNumbersEditing,
+                                                         [savedCase.id]: e.target.value
+                                                      })}
+                                                      onBlur={() => {
+                                                         const val = caseClaimNumbersEditing[savedCase.id];
+                                                         if (val !== undefined) {
+                                                            const updatedCases = savedCases.map(c => c.id === savedCase.id ? { ...c, claimNumber: val } : c);
+                                                            setSavedCases(updatedCases);
+                                                            saveAllCases(updatedCases);
+                                                         }
+                                                      }}
+                                                      className="h-8 text-xs font-mono bg-neutral-950 border-neutral-850 text-neutral-300"
+                                                   />
+                                                </div>
+                                                <div className="space-y-1">
+                                                   <span className="text-[10px] text-neutral-500 font-mono tracking-wider uppercase block">Claimant Classification</span>
+                                                   <div className="h-8 flex items-center px-3 bg-neutral-950 border border-neutral-850 rounded-md text-xs text-orange-300 font-mono select-none">
+                                                      {savedCase.claimantType || "Estate Portfolio"}
+                                                   </div>
+                                                </div>
+                                             </div>
+                                          </div>
+
+                                          {/* CHECKLIST */}
+                                          <div className="bg-neutral-900/40 p-4 rounded-xl border border-neutral-900 space-y-3">
+                                             <span className="text-[10px] uppercase font-mono tracking-wider text-neutral-450 block flex justify-between items-center">
+                                                Active Recovery Checklist
+                                                <span className="text-[9px] text-emerald-400 lowercase font-normal font-mono">Process Steps</span>
+                                             </span>
+                                             <div className="space-y-2">
+                                                {(savedCase.tasks || [
+                                                   { id: "t1", text: "Confirm living claimant status or obtain certified power of attorney", done: false },
+                                                   { id: "t2", text: "Obtain certified copy of probate authorization or testamentary archives", done: false },
+                                                   { id: "t3", text: "Acquire signed notarized contract limit agreement (max 10% rate)", done: false },
+                                                   { id: "t4", text: "Formally submit physical claims bundle to state controller bureau", done: false }
+                                                ]).map((task) => (
+                                                   <div 
+                                                      key={task.id} 
+                                                      onClick={() => {
+                                                         const currentTasks = savedCase.tasks || [
+                                                            { id: "t1", text: "Confirm living claimant status or obtain certified power of attorney", done: false },
+                                                            { id: "t2", text: "Obtain certified copy of probate authorization or testamentary archives", done: false },
+                                                            { id: "t3", text: "Acquire signed notarized contract limit agreement (max 10% rate)", done: false },
+                                                            { id: "t4", text: "Formally submit physical claims bundle to state controller bureau", done: false }
+                                                         ];
+                                                         const updatedTasks = currentTasks.map(t => t.id === task.id ? { ...t, done: !t.done } : t);
+                                                         const updatedCases = savedCases.map(c => c.id === savedCase.id ? { ...c, tasks: updatedTasks } : c);
+                                                         setSavedCases(updatedCases);
+                                                         saveAllCases(updatedCases);
+                                                      }}
+                                                      className={`flex items-start gap-2.5 p-2 rounded-lg cursor-pointer text-xs select-none transition-all ${
+                                                         task.done 
+                                                            ? "bg-emerald-950/20 text-neutral-400 line-through border border-emerald-950/30" 
+                                                            : "bg-neutral-950/50 hover:bg-neutral-900 text-neutral-200 border border-neutral-850/30"
+                                                     }`}
+                                                   >
+                                                      <div className="mt-0.5 shrink-0">
+                                                         {task.done ? (
+                                                            <CheckSquare className="w-3.5 h-3.5 text-emerald-500 fill-emerald-500/10" />
+                                                         ) : (
+                                                            <Square className="w-3.5 h-3.5 text-neutral-600" />
+                                                         )}
+                                                      </div>
+                                                      <span>{task.text}</span>
+                                                   </div>
+                                                ))}
+                                             </div>
+                                          </div>
+                                       </div>
+
+                                       {/* RIGHT NOTES LOGS + TIMELINE TRACKER */}
+                                       <div className="lg:col-span-6 space-y-4 flex flex-col">
+                                          <div className="bg-neutral-900/40 p-4 rounded-xl border border-neutral-900 space-y-2 flex-grow flex flex-col">
+                                             <div className="flex justify-between items-center">
+                                                <span className="text-[10px] uppercase font-mono tracking-wider text-neutral-450 block">Correspondence Logs & Notes</span>
+                                                <Button 
+                                                   size="xs"
+                                                   onClick={() => {
+                                                      const val = caseNotesEditing[savedCase.id] !== undefined ? caseNotesEditing[savedCase.id] : (savedCase.notes || "");
+                                                      const updatedCases = savedCases.map(c => c.id === savedCase.id ? { ...c, notes: val } : c);
+                                                      setSavedCases(updatedCases);
+                                                      saveAllCases(updatedCases);
+                                                      alert("Case correspondence logs updated successfully!");
+                                                   }}
+                                                   className="bg-orange-500 hover:bg-orange-600 text-black font-extrabold text-[10px] px-2 py-0.5 h-6 rounded"
+                                                >
+                                                   Save Note Block</Button>
+     
+                                             </div>
+                                             <textarea
+                                                placeholder="Record internal outreach attempts, calls to county registrars, emails to heirs, or deceased estate research progress logs..."
+                                                value={caseNotesEditing[savedCase.id] !== undefined ? caseNotesEditing[savedCase.id] : (savedCase.notes || "")}
+                                                onChange={(e) => setCaseNotesEditing({
+                                                   ...caseNotesEditing,
+                                                   [savedCase.id]: e.target.value
+                                                })}
+                                                className="w-full flex-grow h-28 bg-neutral-950 text-xs border border-neutral-850 rounded-lg p-2.5 text-neutral-300 focus:outline-none focus:ring-1 focus:ring-orange-500 font-mono leading-relaxed"
+                                             />
+                                          </div>
+
+                                          <div className="bg-neutral-900/40 p-4 rounded-xl border border-neutral-900 space-y-2">
+                                             <span className="text-[10px] uppercase font-mono tracking-wider text-neutral-450 block">Chronological milestones tracker Log</span>
+                                             <div className="space-y-2 max-h-32 overflow-y-auto pr-1">
+                                                {(savedCase.timeline || [
+                                                   { date: new Date(savedCase.createdAt).toLocaleDateString(), stage: "Lead Initialized", desc: "Outreach card opened and database files indexed." }
+                                                ]).map((t, index) => (
+                                                   <div key={index} className="flex gap-2.5 text-[11px] font-mono leading-relaxed pb-2 border-b border-neutral-900/40 last:border-0 pl-1">
+                                                      <span className="text-orange-400 font-bold shrink-0">{t.date}</span>
+                                                      <div className="space-y-0.5">
+                                                         <span className="text-neutral-300 font-semibold uppercase text-[10px] bg-neutral-950 px-1.5 py-0.5 rounded border border-neutral-850/50 mr-1.5">{t.stage}</span>
+                                                         <span className="text-neutral-450 text-[10px]">{t.desc}</span>
+                                                      </div>
+                                                   </div>
+                                                ))}
+                                             </div>
+                                          </div>
+                                       </div>
+                                    </div>
+                                 </div>
+                              </CardContent>
+                           </Card>
+                        )
+                     })}
+                  </div>
+               )}
+             </div>
+             );
+          })()}
+
+          {/* 4) CALIFORNIA BUNDLING tools page */}
+          {activeTab === "ca_bundling" && (
+            <CaliforniaSpecialTools 
+              toolType="bundling" 
+              onAddCaseToSaved={handleSaveConsolidatedCase} 
+              savedCases={savedCases}
+            />
+          )}
+
+          {/* 5) CALIFORNIA ASSET COMBINER page */}
+          {activeTab === "asset_combiner" && (
+            <CaliforniaSpecialTools 
+              toolType="combiner" 
+              onAddCaseToSaved={handleSaveConsolidatedCase} 
+              savedCases={savedCases}
+            />
+          )}
+
+          {/* 6) CALIFORNIA investigator hub page */}
+          {activeTab === "ca_investigator_hub" && (
+            <CaliforniaSpecialTools 
+              toolType="investigator_hub" 
+            />
+          )}
+
+          {/* 7) CAMPAIGNS outreach list page */}
+          {activeTab === "campaigns" && (
+            <OutreachAndDataTools 
+              toolType="campaigns" 
+              savedCases={savedCases} 
+            />
+          )}
+
+          {/* 8) TRACE & OSINT skip tracing console */}
+          {activeTab === "trace_osint" && (
+            <TraceConsole />
+          )}
+
+          {/* 9) MULTI-STATE STATS page */}
+          {activeTab === "multistate_search" && (
+            <OutreachAndDataTools toolType="multistate_search" />
+          )}
+
+          {/* 10) HERMES formal communication page */}
+          {activeTab === "hermes" && (
+            <OutreachAndDataTools toolType="hermes" />
+          )}
+
+          {/* 11) ASSET MASTER DB list page */}
+          {activeTab === "asset_db" && (
+            <OutreachAndDataTools toolType="asset_db" />
+          )}
+
+          {/* 12) REGULATIONS rules list page */}
+          {activeTab === "regulations" && (
+            <div className="space-y-6 animate-fade-in text-neutral-100">
+              <div className="border-b border-neutral-900 pb-4">
+                <h2 className="text-2xl font-bold tracking-tight">National Regulations Directory</h2>
+                <p className="text-neutral-450 text-xs mt-1">Official locator commission ceilings, filing timelines, and necessary claims proof documents state-by-state.</p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                 {Object.values(STATE_RULES).map(rule => (
+                    <Card key={rule.state} className="border-neutral-900 bg-[#0e0e11] text-neutral-105 rounded-xl">
+                       <CardHeader className="bg-neutral-900/30 border-b border-neutral-900 py-3.5 px-5">
+                          <CardTitle className="flex justify-between items-center text-sm font-semibold">
+                             <span>State code: {rule.state}</span>
+                             <a href={rule.website} target="_blank" rel="noreferrer" className="text-orange-500 hover:text-orange-300 text-xs font-normal flex items-center">
+                                Official Site <ChevronRight className="w-3.5 h-3.5 ml-1" />
+                             </a>
+                          </CardTitle>
+                          <CardDescription className="text-neutral-500 text-xs pt-0.5">{rule.name}</CardDescription>
+                       </CardHeader>
+                       <CardContent className="space-y-4 pt-4 text-xs font-mono">
+                          <div>
+                             <div className="text-[9px] uppercase tracking-wider text-neutral-500 font-bold mb-1">Process Standard</div>
+                             <p className="text-[11.5px] text-neutral-300 font-sans leading-relaxed">{rule.claimProcess}</p>
+                          </div>
+                          <Separator className="bg-neutral-900" />
+                          <div>
+                             <div className="text-[9px] uppercase tracking-wider text-neutral-500 font-bold mb-1.5">Required claims documents</div>
+                             <ul className="text-[11.5px] text-neutral-300 space-y-1 list-disc list-inside font-sans">
+                                {rule.documentationRequired.map((doc, i) => (
+                                   <li key={i}>{doc}</li>
+                                ))}
+                             </ul>
+                          </div>
+                          <Separator className="bg-neutral-900" />
+                          <div className="grid grid-cols-2 gap-2">
+                             <div>
+                                <div className="text-[9px] uppercase tracking-wider text-neutral-500 font-bold mb-0.5">Timeline</div>
+                                <p className="text-[11.5px] font-semibold text-neutral-200">{rule.timeline}</p>
+                             </div>
+                             <div>
+                                <div className="text-[9px] uppercase tracking-wider text-neutral-500 font-bold mb-0.5">Locator Fee limit</div>
+                                <p className="text-[11.5px] font-semibold text-orange-400">{rule.maxCommission}</p>
+                             </div>
+                          </div>
+                       </CardContent>
+                    </Card>
+                 ))}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {activeTab === "database" && (() => {
-           const filteredCases = savedCases.filter(c => dbStateFilter === "" || c.assets.some(a => a.state === dbStateFilter));
-           return (
-           <div className="space-y-6">
-             <h2 className="text-2xl font-light tracking-tight text-neutral-100 mb-6 flex justify-between items-center">
-                Saved Investigations
-                <div className="flex items-center space-x-4">
-                   <select 
-                      value={dbStateFilter}
-                      onChange={e => setDbStateFilter(e.target.value)}
-                      className="flex h-9 rounded-md border border-input bg-neutral-900/40 backdrop-blur-md border-neutral-800 px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                   >
-                      <option value="">All States</option>
-                      {AVAILABLE_STATES.map(st => (
-                        <option key={st} value={st}>{st}</option>
-                      ))}
-                   </select>
-                   <Badge variant="secondary" className="font-normal">{filteredCases.length} Total</Badge>
-                </div>
-             </h2>
-             {filteredCases.length === 0 ? (
-                <div className="text-center py-12 px-4 border border-dashed border-neutral-700 rounded-xl bg-neutral-900/40 backdrop-blur-md border-neutral-800">
-                   <Database className="w-12 h-12 text-neutral-600 mx-auto mb-4" />
-                   <h3 className="text-lg font-medium text-neutral-100">{savedCases.length === 0 ? "No saved cases yet" : "No cases match filter"}</h3>
-                   <p className="text-neutral-400 mt-1 max-w-sm mx-auto">
-                     {savedCases.length === 0 ? "Run a search and click \"Save to Category\" to build your database of leads." : "Try clearing the state filter to see more saved investigations."}
-                   </p>
-                   <Button onClick={() => {
-                     if (savedCases.length === 0) setActiveTab("search");
-                     else setDbStateFilter("");
-                   }} className="mt-4" variant="outline">
-                     {savedCases.length === 0 ? "Start Searching" : "Clear Filter"}
-                   </Button>
-                </div>
-             ) : (
-                <div className="grid grid-cols-1 gap-6">
-                   {filteredCases.map((savedCase) => {
-                      const totalAmount = savedCase.assets.reduce((sum, a) => sum + a.amount, 0);
-                      return (
-                         <Card key={savedCase.id} className="border-neutral-800">
-                            <CardHeader className="bg-neutral-900/50/50 border-b border-neutral-800 flex flex-row items-center justify-between py-4">
-                               <div>
-                                 <CardTitle className="text-lg text-orange-300">{savedCase.categoryName}</CardTitle>
-                                 <CardDescription className="font-mono text-xs mt-1">
-                                    ID: {savedCase.id} | Saved on {new Date(savedCase.createdAt).toLocaleDateString()}
-                                 </CardDescription>
-                               </div>
-                               <Button variant="ghost" className="text-red-600 hover:bg-red-50 hover:text-red-700" onClick={() => handleDeleteCase(savedCase.id)}>Delete</Button>
-                            </CardHeader>
-                            <CardContent className="p-0">
-                               <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-gray-100">
-                                  <div className="p-6">
-                                     <div className="text-xs uppercase tracking-wider text-neutral-400 mb-1">Total Value Found</div>
-                                     <div className="text-2xl font-light text-green-700">${totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
-                                     <div className="text-sm text-neutral-400 mt-1">{savedCase.assets.length} identified assets</div>
-                                  </div>
-                                  <div className="p-6 md:col-span-2 space-y-4">
-                                     <div className="font-medium text-neutral-100 text-sm uppercase tracking-wide">Assets by State</div>
-                                     <div className="flex flex-wrap gap-2">
-                                        {Array.from(new Set(savedCase.assets.map(a => a.state))).map(state => {
-                                           const stateAssets = savedCase.assets.filter(a => a.state === state);
-                                           const stateTotal = stateAssets.reduce((s, a) => s + a.amount, 0);
-                                           return (
-                                              <Dialog key={state}>
-                                                 <DialogTrigger className={cn(buttonVariants({ variant: "outline" }), "h-auto py-2 px-3 flex flex-col items-start gap-1")}>
-                                                       <span className="font-bold text-neutral-100">{state}</span>
-                                                       <span className="text-xs text-neutral-400">{stateAssets.length} claims</span>
-                                                       <span className="text-xs font-mono text-green-700">${stateTotal.toLocaleString('en-US')}</span>
-                                                 </DialogTrigger>
-                                                 <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-                                                    <DialogHeader>
-                                                       <DialogTitle>Claims in {state}</DialogTitle>
-                                                       <DialogDescription>{savedCase.categoryName} - {STATE_RULES[state]?.name}</DialogDescription>
-                                                    </DialogHeader>
-                                                    <div className="my-4">
-                                                       <Table>
-                                                          <TableHeader>
-                                                             <TableRow>
-                                                                <TableHead>Holder</TableHead>
-                                                                <TableHead>Target Name</TableHead>
-                                                                <TableHead>Type</TableHead>
-                                                                <TableHead className="text-right">Amount</TableHead>
-                                                             </TableRow>
-                                                          </TableHeader>
-                                                          <TableBody>
-                                                             {stateAssets.map(asset => (
-                                                                <TableRow key={asset.id}>
-                                                                   <TableCell>{asset.holderCompany}</TableCell>
-                                                                   <TableCell className="font-medium">{asset.name}</TableCell>
-                                                                   <TableCell>{asset.type}</TableCell>
-                                                                   <TableCell className="text-right font-mono">${asset.amount.toLocaleString()}</TableCell>
-                                                                </TableRow>
-                                                             ))}
-                                                          </TableBody>
-                                                       </Table>
-                                                    </div>
-                                                 </DialogContent>
-                                              </Dialog>
-                                           );
-                                        })}
-                                     </div>
-                                  </div>
-                               </div>
-                            </CardContent>
-                         </Card>
-                      )
-                   })}
-                </div>
-             )}
-           </div>
-           );
-        })()}
+          {/* 13) IMPORT CSV parsing subpage */}
+          {activeTab === "import_csv" && (
+            <OutreachAndDataTools 
+              toolType="import_csv" 
+              onImportRecords={(parsedRows) => {
+                setCustomImportedRecords(prev => [...parsedRows, ...prev]);
+                // Transition user back to Search Workbench where imported rows are merged
+                setActiveTab("search_workbench");
+              }} 
+            />
+          )}
 
-        {activeTab === "trace" && <TraceConsole />}
-
+        </div>
       </main>
 
-      {/* Save Dialog */}
+      {/* Save Leads dialog */}
       <Dialog open={saveDialogOpen} onOpenChange={setSaveDialogOpen}>
-        <DialogContent>
+        <DialogContent className="bg-neutral-950 text-neutral-200 border-neutral-900">
           <DialogHeader>
-             <DialogTitle>Save to Category</DialogTitle>
-             <DialogDescription>Create a tracking category to save this database query result.</DialogDescription>
+             <DialogTitle className="font-mono text-orange-400">Save leads to category</DialogTitle>
+             <DialogDescription className="text-neutral-450">Create a tracking leads folder to automatically consolidate the workbench query results into client accounts.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 my-2">
              <div className="space-y-2">
-                <Label htmlFor="categoryName">Account / Category Name</Label>
+                <Label htmlFor="categoryName" className="text-xs uppercase text-neutral-400 font-mono tracking-wider font-semibold">Account / Category Name</Label>
                 <Input 
                    id="categoryName" 
                    autoFocus
-                   placeholder="e.g. John Doe Estate" 
+                   placeholder={`e.g. ${recommendCategoryName(firstName, lastName, targetState, searchMode)}`} 
                    value={saveCategoryName} 
                    onChange={e => setSaveCategoryName(e.target.value)} 
+                   className="bg-neutral-950 border-neutral-850 focus:border-orange-500"
                 />
+                <p className="text-[10px] text-neutral-500 leading-normal italic mt-1">
+                  Leave blank to automatically suggest a name based on current claimant credentials ("{recommendCategoryName(firstName, lastName, targetState, searchMode)}").
+                </p>
              </div>
           </div>
-          <DialogFooter>
-             <Button variant="outline" onClick={() => setSaveDialogOpen(false)}>Cancel</Button>
-             <Button onClick={handleSaveCase} className="bg-orange-600 hover:bg-orange-700">Save Investigation</Button>
+          <DialogFooter className="gap-2">
+             <Button variant="outline" onClick={() => setSaveDialogOpen(false)} className="border-neutral-850 text-neutral-400">Cancel</Button>
+             <Button onClick={handleSaveCase} className="bg-orange-600 hover:bg-orange-700 text-neutral-50">Save Leads Portfolio</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Email Generation Dialog */}
+      {/* Email Generation modal frame */}
       <Dialog open={emailDialogOpen} onOpenChange={setEmailDialogOpen}>
-        <DialogContent className="sm:max-w-[700px] h-[80vh] flex flex-col">
+        <DialogContent className="sm:max-w-[700px] h-[80vh] flex flex-col bg-neutral-950 border-neutral-900 text-neutral-200">
           <DialogHeader>
-            <DialogTitle className="flex items-center">
-              <Mail className="w-5 h-5 mr-2 text-orange-500" />
-              Generated Outreach Email
+            <DialogTitle className="flex items-center text-orange-400 font-mono">
+              <Mail className="w-5 h-5 mr-2 text-orange-500 animate-pulse" />
+              Professional Skip Outreach
             </DialogTitle>
-            <DialogDescription>
-              Drafted for {selectedRelative?.name} ({selectedRelative?.relation}) regarding {searchMode === "highValue" ? "the unclaimed property owner" : `${firstName} ${lastName}`}.
+            <DialogDescription className="text-neutral-450">
+              Drafted for {selectedRelative?.name} ({selectedRelative?.relation}) regarding unclaimed property.
             </DialogDescription>
           </DialogHeader>
           <div className="relative flex-grow flex flex-col mt-4">
             {isDraftingEmail ? (
-              <div className="absolute inset-0 flex flex-col items-center justify-center bg-neutral-900/50/50 rounded-md border border-neutral-800">
-                 <Loader2 className="h-8 w-8 animate-spin text-orange-500 mb-4" />
-                 <p className="text-sm font-medium text-neutral-400">AI is crafting a professional email...</p>
-                 <p className="text-xs text-neutral-500 mt-2">Analyzing asset details and relationship.</p>
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-neutral-950 rounded-md border border-neutral-900">
+                 <Loader2 className="h-8 w-8 animate-spin text-orange-400 mb-4" />
+                 <p className="text-xs font-semibold text-neutral-400 uppercase tracking-widest animate-pulse">Gemini preparing letter...</p>
               </div>
             ) : (
               <div className="h-full">
@@ -794,20 +1453,20 @@ export default function App() {
               </div>
             )}
           </div>
-          <DialogFooter className="mt-4 sm:justify-between flex-row items-center border-t border-neutral-800 pt-4">
-             <div className="text-xs text-neutral-400 flex items-center">
-                <AlertCircle className="w-3 h-3 mr-1" />
-                Review and edit carefully before sending
+          <DialogFooter className="mt-4 sm:justify-between flex-row items-center border-t border-neutral-900 pt-4">
+             <div className="text-[10px] text-neutral-500 flex items-center pr-3">
+                <AlertCircle className="w-3.5 h-3.5 mr-1" />
+                Inspect proof contents before dispatching
              </div>
-             <div className="space-x-2">
-                <Button variant="outline" onClick={() => setEmailDialogOpen(false)}>Close</Button>
+             <div className="space-x-2 flex">
+                <Button variant="outline" onClick={() => setEmailDialogOpen(false)} className="border-neutral-850 text-neutral-400">Close</Button>
                 <Button 
                    onClick={copyToClipboard} 
                    disabled={isDraftingEmail || !draftedEmail}
-                   className="bg-orange-600 hover:bg-orange-700 text-white"
+                   className="bg-orange-600 hover:bg-orange-700 text-neutral-50 font-semibold"
                 >
-                   {copied ? <Check className="w-4 h-4 mr-2" /> : <Copy className="w-4 h-4 mr-2" />}
-                   {copied ? "Copied!" : "Copy to Clipboard"}
+                   {copied ? <Check className="w-4 h-4 mr-1.5" /> : <Copy className="w-4 h-4 mr-1.5" />}
+                   {copied ? "Copied!" : "Copy Output"}
                 </Button>
              </div>
           </DialogFooter>
@@ -816,4 +1475,3 @@ export default function App() {
     </div>
   );
 }
-

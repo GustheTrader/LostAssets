@@ -43,12 +43,11 @@ export const searchLostAssets = async (query: SearchQuery): Promise<AssetRecord[
           results.push({
             id: `api-ast-${rec.id}`,
             name: `${rec.first_name || rec.firstName || "Unknown"} ${rec.last_name || rec.lastName || ""}`.trim().toUpperCase(),
-            type: rec.property_type || rec.type,
+            type: rec.property_type || rec.type || "Uncashed Check",
             amount: rec.amount,
-            holderCompany: rec.company,
-            state: rec.state,
-            address: rec.location,
-            stateId: rec.state_id || rec.stateId
+            holderCompany: rec.company || "Unknown Custodian",
+            state: rec.state || "CA",
+            address: rec.location || "State unclaimed registry escrow"
           });
         }
       }

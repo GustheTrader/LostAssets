@@ -8,7 +8,6 @@ export interface AssetRecord {
   type: AssetType;
   holderCompany: string;
   amount: number;
-  stateId?: string;
 }
 
 export interface Relative {
@@ -40,4 +39,11 @@ export interface SavedCase {
   assets: AssetRecord[];
   relatives: Relative[];
   createdAt: number;
+  status?: "Lead" | "Intake" | "Evidence" | "Submitted" | "Review" | "Paid";
+  notes?: string;
+  claimNumber?: string;
+  tasks?: { id: string; text: string; done: boolean }[];
+  timeline?: { date: string; stage: string; desc: string }[];
+  claimantType?: "Individual" | "Estate" | "Business";
+  ownerName?: string;
 }
