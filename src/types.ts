@@ -46,4 +46,18 @@ export interface SavedCase {
   timeline?: { date: string; stage: string; desc: string }[];
   claimantType?: "Individual" | "Estate" | "Business";
   ownerName?: string;
+  agent?: string;
 }
+
+export interface RecentSearch {
+  id: string;
+  searchMode: "identity" | "highValue";
+  firstName: string;
+  lastName: string;
+  emailAddress: string;
+  phoneNumber: string;
+  targetState: string;
+  assetType: string;
+  timestamp: string;
+}
+

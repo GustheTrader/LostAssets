@@ -5,7 +5,7 @@ import {
   Save, ChevronUp, ChevronDown, AlertTriangle, CheckCircle, Network, 
   Radar, Terminal, UserSearch, Award, Shield, UserCheck, Layers, 
   Megaphone, Send, Upload, Scale, Folder, Coins, ShieldAlert, CheckCircle2, Globe,
-  CheckSquare, Square, History
+  CheckSquare, Square, History, Printer
 } from "lucide-react";
 import { cn } from "./lib/utils";
 import { Button, buttonVariants } from "./components/ui/button";
@@ -27,8 +27,9 @@ import { ClientIntake } from "./components/ClientIntake";
 import { CaliforniaSpecialTools } from "./components/CaliforniaSpecialTools";
 import { OutreachAndDataTools } from "./components/OutreachAndDataTools";
 import { LeadHistoryModal } from "./components/LeadHistoryModal";
+import { PrintCaseModal } from "./components/PrintCaseModal";
 
-import { AssetRecord, Relative, SavedCase, SearchQuery } from "./types";
+import { AssetRecord, Relative, SavedCase, SearchQuery, RecentSearch } from "./types";
 import { searchLostAssets, trackRelatives, AVAILABLE_STATES, ASSET_TYPES } from "./services/mockDataService";
 import { generateOutreachEmail } from "./services/geminiService";
 import { saveCase, getSavedCases, deleteCase, saveAllCases } from "./services/dataStore";
@@ -77,11 +78,31 @@ export default function App() {
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [assets, setAssets] = useState<AssetRecord[]>([]);
+  const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
+  const [isSavingSelectedOnly, setIsSavingSelectedOnly] = useState(false);
   const [relatives, setRelatives] = useState<Relative[]>([]);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    setSelectedAssetIds([]);
+  }, [assets]);
+
   // Dynamic Custom Imported CSV Records state
   const [customImportedRecords, setCustomImportedRecords] = useState<any[]>([]);
+
+  // Recent Searches state
+  const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([]);
+
+  useEffect(() => {
+    const stored = localStorage.getItem("recentSearches");
+    if (stored) {
+      try {
+        setRecentSearches(JSON.parse(stored));
+      } catch (e) {
+        console.error("Error loading recent searches:", e);
+      }
+    }
+  }, []);
 
   // Mobile navigation drawer toggle
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -96,6 +117,48 @@ export default function App() {
   const [caseNotesEditing, setCaseNotesEditing] = useState<Record<string, string>>({});
   const [caseClaimNumbersEditing, setCaseClaimNumbersEditing] = useState<Record<string, string>>({});
   
+  // Auto-save tracker states
+  const [autoSaveStatus, setAutoSaveStatus] = useState<Record<string, "idle" | "saving" | "saved">>({});
+
+  const saveNoteDirectly = (caseId: string, val: string) => {
+    setAutoSaveStatus(prev => ({ ...prev, [caseId]: "saving" }));
+    setSavedCases(prevCases => {
+      const updated = prevCases.map(c => c.id === caseId ? { ...c, notes: val } : c);
+      saveAllCases(updated);
+      return updated;
+    });
+    setTimeout(() => {
+      setAutoSaveStatus(prev => ({ ...prev, [caseId]: "saved" }));
+      setTimeout(() => {
+        setAutoSaveStatus(prev => ({ ...prev, [caseId]: "idle" }));
+      }, 2000);
+    }, 500);
+  };
+
+  const handleNotesBlur = (caseId: string) => {
+    const val = caseNotesEditing[caseId];
+    if (val !== undefined) {
+      const currentCase = savedCases.find(c => c.id === caseId);
+      if (currentCase && val !== (currentCase.notes || "")) {
+        saveNoteDirectly(caseId, val);
+      }
+    }
+  };
+
+  // Every 5 seconds auto-save effect
+  useEffect(() => {
+    const timer = setInterval(() => {
+      Object.entries(caseNotesEditing).forEach(([caseId, editedVal]) => {
+        const currentCase = savedCases.find(c => c.id === caseId);
+        if (currentCase && editedVal !== (currentCase.notes || "")) {
+          saveNoteDirectly(caseId, editedVal);
+        }
+      });
+    }, 5000);
+
+    return () => clearInterval(timer);
+  }, [caseNotesEditing, savedCases]);
+
   useEffect(() => {
     setSavedCases(getSavedCases());
   }, []);
@@ -119,8 +182,16 @@ export default function App() {
   const debouncedLastName = useDebounce(lastName, 500);
   const debouncedEmail = useDebounce(emailAddress, 500);
 
-  const runSearch = async (isManual = false) => {
-    if (searchMode === "identity" && (!firstName.trim() && !lastName.trim() && !emailAddress.trim())) {
+  const runSearch = async (isManual = false, overrideParams?: Partial<RecentSearch>) => {
+    const activeSearchMode = overrideParams?.searchMode ?? searchMode;
+    const activeFirstName = overrideParams ? (overrideParams.firstName ?? "") : firstName;
+    const activeLastName = overrideParams ? (overrideParams.lastName ?? "") : lastName;
+    const activeEmail = overrideParams ? (overrideParams.emailAddress ?? "") : emailAddress;
+    const activePhone = overrideParams ? (overrideParams.phoneNumber ?? "") : phoneNumber;
+    const activeState = overrideParams ? (overrideParams.targetState ?? "") : targetState;
+    const activeAssetType = overrideParams ? (overrideParams.assetType ?? "") : assetType;
+
+    if (activeSearchMode === "identity" && (!activeFirstName.trim() && !activeLastName.trim() && !activeEmail.trim())) {
       if (isManual) setError("Please provide at least a name or email address.");
       return;
     }
@@ -134,15 +205,15 @@ export default function App() {
     }
 
     try {
-      const query = searchMode === "highValue" 
-        ? { generalHighValue: true, targetState, assetType }
+      const query = activeSearchMode === "highValue" 
+        ? { generalHighValue: true, targetState: activeState, assetType: activeAssetType }
         : { 
-            firstName: firstName.trim(), 
-            lastName: lastName.trim(), 
-            email: emailAddress.trim(), 
-            phone: phoneNumber.trim(),
-            targetState,
-            assetType
+            firstName: activeFirstName.trim(), 
+            lastName: activeLastName.trim(), 
+            email: activeEmail.trim(), 
+            phone: activePhone.trim(),
+            targetState: activeState,
+            assetType: activeAssetType
           };
 
       // 1. Search for assets
@@ -150,9 +221,9 @@ export default function App() {
 
       // Intercept with our parsed CSV custom uploaded records!
       if (customImportedRecords.length > 0) {
-        const queryFirst = firstName.trim().toLowerCase();
-        const queryLast = lastName.trim().toLowerCase();
-        const queryState = targetState || "";
+        const queryFirst = activeFirstName.trim().toLowerCase();
+        const queryLast = activeLastName.trim().toLowerCase();
+        const queryState = activeState || "";
 
         const matches = customImportedRecords.filter(rec => {
           const matchesFirst = !queryFirst || rec.name.toLowerCase().includes(queryFirst);
@@ -180,6 +251,36 @@ export default function App() {
       }
       setHasSearched(true);
       if (!isManual) setError(null);
+
+      // Save to recent searches if manual and NOT a direct re-run
+      if (isManual && !overrideParams) {
+        const newSearch: RecentSearch = {
+          id: Date.now().toString(),
+          searchMode: activeSearchMode,
+          firstName: activeFirstName,
+          lastName: activeLastName,
+          emailAddress: activeEmail,
+          phoneNumber: activePhone,
+          targetState: activeState,
+          assetType: activeAssetType,
+          timestamp: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' })
+        };
+
+        setRecentSearches(prev => {
+          const filtered = prev.filter(s => !(
+            s.searchMode === newSearch.searchMode &&
+            s.firstName === newSearch.firstName &&
+            s.lastName === newSearch.lastName &&
+            s.emailAddress === newSearch.emailAddress &&
+            s.phoneNumber === newSearch.phoneNumber &&
+            s.targetState === newSearch.targetState &&
+            s.assetType === newSearch.assetType
+          ));
+          const updated = [newSearch, ...filtered].slice(0, 5);
+          localStorage.setItem("recentSearches", JSON.stringify(updated));
+          return updated;
+        });
+      }
     } catch (err: any) {
       if (isManual) setError(err.message || "An error occurred during the search.");
     } finally {
@@ -200,6 +301,36 @@ export default function App() {
     await runSearch(true);
   };
 
+  const handleReRunSearch = async (recent: RecentSearch) => {
+    setSearchMode(recent.searchMode);
+    setFirstName(recent.firstName);
+    setLastName(recent.lastName);
+    setEmailAddress(recent.emailAddress);
+    setPhoneNumber(recent.phoneNumber);
+    setTargetState(recent.targetState);
+    setAssetType(recent.assetType);
+
+    // Update timestamp and relocate to top of list
+    const updatedRecent = {
+      ...recent,
+      timestamp: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' })
+    };
+
+    setRecentSearches(prev => {
+      const filtered = prev.filter(s => s.id !== recent.id);
+      const updated = [updatedRecent, ...filtered].slice(0, 5);
+      localStorage.setItem("recentSearches", JSON.stringify(updated));
+      return updated;
+    });
+
+    await runSearch(true, recent);
+  };
+
+  const handleClearRecentSearches = () => {
+    setRecentSearches([]);
+    localStorage.removeItem("recentSearches");
+  };
+
   const totalAmount = assets.reduce((sum, asset) => sum + asset.amount, 0);
 
   const sortedAssets = [...assets].sort((a, b) => {
@@ -215,11 +346,15 @@ export default function App() {
 
     const targetName = searchMode === "highValue" ? "the unclaimed property owner" : `${firstName.trim()} ${lastName.trim()}`;
 
+    const assetsToDraft = selectedAssetIds.length > 0 
+      ? assets.filter(a => selectedAssetIds.includes(a.id))
+      : assets;
+
     try {
       const emailText = await generateOutreachEmail(
         { firstName: searchMode === "identity" && firstName ? firstName.trim() : "Unknown", 
           lastName: searchMode === "identity" && lastName ? lastName.trim() : "Owner" },
-        assets,
+        assetsToDraft,
         relative
       );
       setDraftedEmail(emailText);
@@ -227,6 +362,23 @@ export default function App() {
       setDraftedEmail("Error generating email: " + err.message);
     } finally {
       setIsDraftingEmail(false);
+    }
+  };
+
+  const handleDraftMassEmail = () => {
+    if (relatives.length > 0) {
+      handleDraftEmail(relatives[0]);
+    } else {
+      handleDraftEmail({
+        id: "generic-heir",
+        name: "[Relative/Heir Name]",
+        relation: "Relative",
+        age: 0,
+        location: "",
+        email: "[Email Address]",
+        phone: "[Phone Number]",
+        matchConfidence: 105
+      });
     }
   };
 
@@ -240,7 +392,11 @@ export default function App() {
         ? { generalHighValue: true, targetState: targetState || undefined, assetType: assetType || undefined }
         : { firstName: firstName.trim(), lastName: lastName.trim(), email: emailAddress.trim(), phone: phoneNumber.trim(), targetState: targetState || undefined, assetType: assetType || undefined };
         
-    const newCase = saveCase(finalCategoryName, query, assets, relatives);
+    const assetsToSave = isSavingSelectedOnly 
+        ? assets.filter(a => selectedAssetIds.includes(a.id))
+        : assets;
+
+    const newCase = saveCase(finalCategoryName, query, assetsToSave, relatives);
     setSavedCases([newCase, ...savedCases]);
     setSaveDialogOpen(false);
     setSaveCategoryName("");
@@ -702,6 +858,93 @@ export default function App() {
                   </CardContent>
                 </Card>
 
+                {/* Recent Searches Side Panel */}
+                <Card className="border border-neutral-900 bg-[#0e0e11] overflow-hidden">
+                  <div className="bg-neutral-905 px-4 py-3 border-b border-neutral-900 flex items-center justify-between">
+                    <h2 className="text-xs font-bold uppercase tracking-widest text-neutral-350 flex items-center">
+                      <History className="w-4 h-4 mr-2 text-orange-500" />
+                      Recent Investigations
+                    </h2>
+                    {recentSearches.length > 0 && (
+                      <button 
+                        onClick={handleClearRecentSearches}
+                        className="text-[10px] font-mono text-neutral-500 hover:text-rose-450 transition-colors uppercase font-semibold"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  <CardContent className="p-3">
+                    {recentSearches.length === 0 ? (
+                      <div className="py-8 px-4 text-center border border-dashed border-neutral-850/60 rounded-lg bg-neutral-950/20">
+                        <History className="w-5 h-5 mx-auto mb-2 text-neutral-650 animate-pulse" />
+                        <p className="text-[11px] text-neutral-500 font-mono">No recent run histories yet.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {recentSearches.map((run) => {
+                          const title = run.searchMode === "highValue" 
+                            ? "High-Value Claims Scan" 
+                            : [run.firstName, run.lastName].filter(Boolean).join(" ") || "Unnamed Inquiry";
+                          
+                          return (
+                            <button 
+                              key={run.id}
+                              onClick={() => handleReRunSearch(run)}
+                              className="w-full group text-left p-3 rounded-lg border border-neutral-900 bg-neutral-950/40 hover:bg-neutral-900/40 hover:border-orange-500/30 transition-all duration-200 block"
+                            >
+                              <div className="flex items-center justify-between gap-2.5">
+                                <span className="font-mono text-xs font-semibold text-neutral-200 group-hover:text-orange-400 transition-colors truncate max-w-[170px]" title={title}>
+                                  {title}
+                                </span>
+                                <Badge className={cn(
+                                  "text-[8px] font-mono leading-none tracking-normal py-0.5 px-1.5 uppercase shrink-0 border",
+                                  run.searchMode === "highValue"
+                                    ? "bg-amber-500/10 text-amber-400 border-amber-500/20 hover:bg-amber-500/10"
+                                    : "bg-blue-500/10 text-blue-400 border-blue-500/20 hover:bg-blue-500/10"
+                                )}>
+                                  {run.searchMode === "highValue" ? "High Value" : "Identity"}
+                                </Badge>
+                              </div>
+
+                              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                                {run.targetState ? (
+                                  <span className="text-[9px] font-mono bg-neutral-900 border border-neutral-800 text-neutral-400 px-1.5 py-0.5 rounded">
+                                    {run.targetState}
+                                  </span>
+                                ) : (
+                                  <span className="text-[9px] font-mono bg-neutral-900 border border-neutral-800 text-neutral-500 px-1.5 py-0.5 rounded">
+                                    All States
+                                  </span>
+                                )}
+
+                                {run.assetType && (
+                                  <span className="text-[9px] font-mono bg-neutral-900 border border-neutral-800 text-neutral-400 px-1.5 py-0.5 rounded truncate max-w-[90px]" title={run.assetType}>
+                                    {run.assetType}
+                                  </span>
+                                )}
+
+                                {run.emailAddress && (
+                                  <span className="text-[9px] font-mono bg-neutral-900 border border-neutral-800 text-neutral-500 px-1.5 py-0.5 rounded truncate max-w-[80px]" title={run.emailAddress}>
+                                    {run.emailAddress}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="mt-2.5 pt-1.5 border-t border-neutral-900/60 flex items-center justify-between text-[9px] text-neutral-500 font-mono">
+                                <span>Checked at {run.timestamp}</span>
+                                <span className="text-[9px] text-orange-500/40 opacity-0 group-hover:opacity-100 transition-all flex items-center gap-0.5 uppercase font-bold tracking-wider">
+                                  Run Query <ChevronRight className="w-2.5 h-2.5" />
+                                </span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
                 {/* Left quick metrics panel */}
                 {hasSearched && !isSearching && (
                   <div className="space-y-4 animate-fade-in font-mono">
@@ -765,11 +1008,147 @@ export default function App() {
                     </TabsList>
 
                     <TabsContent value="claims" className="space-y-4 mt-4">
+                      {(() => {
+                        const selectedTotalAmount = assets.filter(a => selectedAssetIds.includes(a.id)).reduce((sum, a) => sum + a.amount, 0);
+                        const totalSumOfAllAssets = assets.reduce((sum, a) => sum + a.amount, 0);
+                        const coveragePercentage = assets.length > 0 ? (selectedAssetIds.length / assets.length) * 100 : 0;
+                        const valuationPercentage = totalSumOfAllAssets > 0 ? (selectedTotalAmount / totalSumOfAllAssets) * 100 : 0;
+
+                        return (
+                          <Card className="border border-neutral-850 bg-neutral-900/40 shadow-lg p-5">
+                            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
+                              <div className="space-y-1.5 min-w-[200px]">
+                                <div className="flex items-center gap-2">
+                                  <div className={cn(
+                                    "p-2 rounded-lg border transition-all duration-300",
+                                    selectedAssetIds.length > 0 
+                                      ? "bg-orange-500/10 border-orange-500/30 text-orange-400" 
+                                      : "bg-neutral-950 border-neutral-900 text-neutral-500"
+                                  )}>
+                                    <Coins className="h-4.5 w-4.5" />
+                                  </div>
+                                  <div>
+                                    <h4 className="text-xs font-semibold text-neutral-200 uppercase tracking-wider font-mono">Live Selection Summary</h4>
+                                    <p className="text-[10px] text-neutral-450 font-mono">Real-time statistics monitor</p>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 flex-grow lg:max-w-2xl">
+                                {/* Claims Selected Count Stat */}
+                                <div className="bg-neutral-950/60 border border-neutral-850 rounded-lg p-3.5 space-y-2">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[10px] uppercase font-mono tracking-wider text-neutral-400">Claims Selected</span>
+                                    <span className="text-[10px] font-mono font-bold text-orange-400">
+                                      {Math.round(coveragePercentage)}% Coverage
+                                    </span>
+                                  </div>
+                                  <div className="flex items-baseline gap-1.5">
+                                    <span className={cn(
+                                      "text-2xl font-bold tracking-tight font-mono transition-colors duration-300",
+                                      selectedAssetIds.length > 0 ? "text-orange-400" : "text-neutral-500"
+                                    )}>
+                                      {selectedAssetIds.length}
+                                    </span>
+                                    <span className="text-xs text-neutral-500">/ {assets.length} claims</span>
+                                  </div>
+                                  <div className="w-full h-1 bg-neutral-900 rounded-full overflow-hidden">
+                                    <div 
+                                      className="h-full bg-orange-500 rounded-full transition-all duration-500 ease-out"
+                                      style={{ width: `${coveragePercentage}%` }}
+                                    />
+                                  </div>
+                                </div>
+
+                                {/* Cumulative Valuation Stat */}
+                                <div className="bg-neutral-950/60 border border-neutral-850 rounded-lg p-3.5 space-y-2">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[10px] uppercase font-mono tracking-wider text-neutral-400">Cumulative Selected Value</span>
+                                    <span className="text-[10px] font-mono font-bold text-emerald-400">
+                                      {Math.round(valuationPercentage)}% Valuation
+                                    </span>
+                                  </div>
+                                  <div className="flex items-baseline gap-1 text-neutral-100">
+                                    <span className={cn(
+                                      "text-2xl font-bold tracking-tight font-mono transition-colors duration-300",
+                                      selectedAssetIds.length > 0 ? "text-emerald-400" : "text-neutral-500"
+                                    )}>
+                                      ${selectedTotalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </span>
+                                    <span className="text-[10px] text-neutral-500 font-mono truncate max-w-[120px] sm:max-w-none">
+                                      &nbsp;/ ${totalSumOfAllAssets.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </span>
+                                  </div>
+                                  <div className="w-full h-1 bg-neutral-900 rounded-full overflow-hidden">
+                                    <div 
+                                      className="h-full bg-emerald-500 rounded-full transition-all duration-500 ease-out"
+                                      style={{ width: `${valuationPercentage}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </Card>
+                        );
+                      })()}
+
+                      {selectedAssetIds.length > 0 && (
+                        <div className="bg-orange-500/10 border border-orange-500/25 px-4 py-3 rounded-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-fade-in animate-duration-300">
+                          <div className="flex items-center gap-2">
+                            <div className="h-2 w-2 rounded-full bg-orange-500 animate-pulse" />
+                            <span className="font-mono text-xs text-neutral-300">
+                              <strong className="text-orange-400">{selectedAssetIds.length}</strong> of {assets.length} Claims Selected 
+                              <span className="text-neutral-500 mx-1.5">|</span>
+                              Est. Value: <strong className="text-emerald-400 font-bold">${
+                                assets.filter(a => selectedAssetIds.includes(a.id))
+                                      .reduce((sum, a) => sum + a.amount, 0)
+                                      .toLocaleString('en-US', { minimumFractionDigits: 2 })
+                              }</strong>
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 w-full sm:w-auto">
+                            <Button 
+                              onClick={() => {
+                                setIsSavingSelectedOnly(true);
+                                setSaveDialogOpen(true);
+                              }} 
+                              size="sm" 
+                              className="flex-1 sm:flex-initial bg-neutral-900 border border-neutral-800 text-neutral-200 hover:bg-neutral-800 font-mono text-[10px] h-8 px-3"
+                            >
+                              <Save className="w-3.5 h-3.5 mr-1" />
+                              Save Selected
+                            </Button>
+                            <Button 
+                              onClick={handleDraftMassEmail} 
+                              size="sm" 
+                              className="flex-1 sm:flex-initial bg-orange-600 hover:bg-orange-700 text-neutral-50 font-mono text-[10px] h-8 px-3"
+                            >
+                              <Mail className="w-3.5 h-3.5 mr-1" />
+                              Draft Mass Email
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+
                       <Card className="border-neutral-900 bg-neutral-950 overflow-hidden">
                         <div className="overflow-x-auto">
                           <Table>
                             <TableHeader className="bg-neutral-900/40">
                               <TableRow className="border-neutral-900 hover:bg-transparent">
+                                <TableHead className="w-[45px] pl-4">
+                                  <input 
+                                    type="checkbox" 
+                                    checked={selectedAssetIds.length === sortedAssets.length && sortedAssets.length > 0}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setSelectedAssetIds(sortedAssets.map(a => a.id));
+                                      } else {
+                                        setSelectedAssetIds([]);
+                                      }
+                                    }}
+                                    className="cursor-pointer rounded border-neutral-800 bg-neutral-900 text-orange-500 focus:ring-orange-500 focus:ring-offset-neutral-950 h-3.5 w-3.5 accent-orange-600"
+                                  />
+                                </TableHead>
                                 <TableHead className="font-mono text-[10px] uppercase tracking-wider text-neutral-400">Claimant Name</TableHead>
                                 <TableHead className="font-mono text-[10px] uppercase tracking-wider text-neutral-400">Property Type</TableHead>
                                 <TableHead className="font-mono text-[10px] uppercase tracking-wider text-neutral-400 font-bold">Losing Custodian</TableHead>
@@ -779,7 +1158,27 @@ export default function App() {
                             </TableHeader>
                             <TableBody>
                               {sortedAssets.map((asset) => (
-                                <TableRow key={asset.id} className="border-neutral-900 hover:bg-neutral-900/40">
+                                <TableRow 
+                                  key={asset.id} 
+                                  className={cn(
+                                    "border-neutral-900 hover:bg-neutral-900/40 transition-colors",
+                                    selectedAssetIds.includes(asset.id) && "bg-neutral-900/60"
+                                  )}
+                                >
+                                  <TableCell className="w-[45px] pl-4">
+                                    <input 
+                                      type="checkbox" 
+                                      checked={selectedAssetIds.includes(asset.id)}
+                                      onChange={() => {
+                                        setSelectedAssetIds(prev => 
+                                          prev.includes(asset.id) 
+                                            ? prev.filter(id => id !== asset.id)
+                                            : [...prev, asset.id]
+                                        );
+                                      }}
+                                      className="cursor-pointer rounded border-neutral-800 bg-neutral-900 text-orange-500 focus:ring-orange-500 focus:ring-offset-neutral-950 h-3.5 w-3.5 accent-orange-600"
+                                    />
+                                  </TableCell>
                                   <TableCell className="font-mono text-xs font-semibold text-neutral-100">{asset.name}</TableCell>
                                   <TableCell className="text-xs text-neutral-400">{asset.type}</TableCell>
                                   <TableCell className="text-xs text-neutral-450">{asset.holderCompany}</TableCell>
@@ -841,7 +1240,13 @@ export default function App() {
                 {/* Save to Category Button */}
                 {!isSearching && hasSearched && assets.length > 0 && (
                   <div className="mt-6 flex justify-end">
-                     <Button onClick={() => setSaveDialogOpen(true)} className="bg-neutral-100 hover:bg-neutral-300 text-neutral-950 font-mono font-bold text-xs h-10 px-5">
+                     <Button 
+                        onClick={() => {
+                          setIsSavingSelectedOnly(false);
+                          setSaveDialogOpen(true);
+                        }} 
+                        className="bg-neutral-100 hover:bg-neutral-300 text-neutral-950 font-mono font-bold text-xs h-10 px-5"
+                     >
                         <Save className="w-4 h-4 mr-2 text-neutral-900" />
                         Save leads folder ({assets.length} claims)
                      </Button>
@@ -1006,6 +1411,13 @@ export default function App() {
                                    </CardDescription>
                                  </div>
                                  <div className="flex items-center gap-2">
+                                    <Dialog>
+                                       <DialogTrigger className="h-8 px-3 border border-neutral-800 bg-neutral-950 hover:bg-neutral-900 text-neutral-300 font-mono text-xs flex items-center gap-1.5 rounded-lg cursor-pointer">
+                                             <Printer className="w-3.5 h-3.5 text-orange-400" />
+                                             Print Dossier
+                                       </DialogTrigger>
+                                       <PrintCaseModal savedCase={savedCase} />
+                                    </Dialog>
                                     <Dialog>
                                        <DialogTrigger className="h-8 px-3 border border-orange-500/25 bg-neutral-950 hover:bg-orange-500/10 text-orange-400 font-mono text-xs flex items-center gap-1.5 rounded-lg cursor-pointer">
 
@@ -1222,7 +1634,7 @@ export default function App() {
                                        <div className="lg:col-span-6 space-y-4 flex flex-col">
                                           <div className="bg-neutral-900/40 p-4 rounded-xl border border-neutral-900 space-y-2 flex-grow flex flex-col">
                                              <div className="flex justify-between items-center">
-                                                <span className="text-[10px] uppercase font-mono tracking-wider text-neutral-450 block">Correspondence Logs & Notes</span>
+                                                <span className="text-[10px] uppercase font-mono tracking-wider text-neutral-450 flex items-center gap-2"><span>Correspondence Logs & Notes</span>{autoSaveStatus[savedCase.id] === "saving" && (<span className="text-[9px] font-mono text-amber-500 flex items-center gap-1 normal-case font-normal animate-pulse"><Loader2 className="w-2.5 h-2.5 animate-spin" /> saving...</span>)}{autoSaveStatus[savedCase.id] === "saved" && (<span className="text-[9px] font-mono text-emerald-400 flex items-center gap-1 normal-case font-normal"><CheckCircle2 className="w-2.5 h-2.5" /> auto-saved</span>)}</span>
                                                 <Button 
                                                    size="xs"
                                                    onClick={() => {
@@ -1244,6 +1656,7 @@ export default function App() {
                                                    ...caseNotesEditing,
                                                    [savedCase.id]: e.target.value
                                                 })}
+                                                onBlur={() => handleNotesBlur(savedCase.id)}
                                                 className="w-full flex-grow h-28 bg-neutral-950 text-xs border border-neutral-850 rounded-lg p-2.5 text-neutral-300 focus:outline-none focus:ring-1 focus:ring-orange-500 font-mono leading-relaxed"
                                              />
                                           </div>
@@ -1437,6 +1850,27 @@ export default function App() {
             <DialogDescription className="text-neutral-450">
               Drafted for {selectedRelative?.name} ({selectedRelative?.relation}) regarding unclaimed property.
             </DialogDescription>
+            {relatives.length > 1 && (
+              <div className="mt-2.5 flex items-center gap-2 bg-neutral-900/60 p-2 rounded-lg border border-neutral-900 max-w-md">
+                <span className="text-[11px] text-neutral-400 font-mono">Recipient:</span>
+                <select
+                  value={selectedRelative?.id || ""}
+                  onChange={(e) => {
+                    const rel = relatives.find(r => r.id === e.target.value);
+                    if (rel) {
+                      handleDraftEmail(rel);
+                    }
+                  }}
+                  className="bg-neutral-950 border border-neutral-850 text-xs text-neutral-200 rounded px-2.5 py-1 font-mono focus:outline-none focus:border-orange-500 cursor-pointer flex-grow"
+                >
+                  {relatives.map(r => (
+                    <option key={r.id} value={r.id}>
+                      {r.name} ({r.relation} - {r.matchConfidence}% Match)
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </DialogHeader>
           <div className="relative flex-grow flex flex-col mt-4">
             {isDraftingEmail ? (

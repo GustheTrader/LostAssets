@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { 
   Megaphone, Mail, Send, Database, FileText, Upload, Globe, 
   CheckCircle2, Sparkles, Copy, Check, Info, Library, Loader2, ArrowRight,
-  FileCheck, RefreshCw, AlertCircle, Sparkle
+  FileCheck, RefreshCw, AlertCircle, Sparkle, Search, Briefcase, UserCheck, Layers, ArrowDownToLine
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
@@ -36,9 +36,10 @@ interface OutreachAndDataToolsProps {
   toolType: "campaigns" | "multistate_search" | "hermes" | "asset_db" | "import_csv";
   savedCases?: any[];
   onImportRecords?: (newRecords: any[]) => void;
+  onAddCaseToSaved?: (caseData: any) => void;
 }
 
-export function OutreachAndDataTools({ toolType, savedCases = [], onImportRecords }: OutreachAndDataToolsProps) {
+export function OutreachAndDataTools({ toolType, savedCases = [], onImportRecords, onAddCaseToSaved }: OutreachAndDataToolsProps) {
   
   // --- CAMPAIGNS STATE ---
   const [selectedCaseId, setSelectedCaseId] = useState("");
@@ -55,7 +56,13 @@ export function OutreachAndDataTools({ toolType, savedCases = [], onImportRecord
 
   // --- ASSET DB STATE ---
   const [dbSearch, setDbSearch] = useState("");
-  const [minAmount, setMinAmount] = useState(1000);
+  const [minAmount, setMinAmount] = useState(500);
+  const [maxAmount, setMaxAmount] = useState(1000000);
+  const [selectedDbAssetIds, setSelectedDbAssetIds] = useState<string[]>([]);
+  const [targetCrmCaseIdDb, setTargetCrmCaseIdDb] = useState("new_db_case");
+  const [customNewDbCaseName, setCustomNewDbCaseName] = useState("");
+  const [dbAssignedAgent, setDbAssignedAgent] = useState("Jeff");
+  const [selectedForFuzzySearch, setSelectedForFuzzySearch] = useState<any | null>(null);
 
   // --- IMPORT CSV STATE ---
   const [rawCSVInput, setRawCSVInput] = useState("");
@@ -280,8 +287,107 @@ Pineda Family Trust, 84300, FL, Life Insurance, Prudential`;
 
   const filteredAssetsCatalog = combinedCatalog.filter(a => {
     const matchesSearch = !dbSearch || a.owner.toLowerCase().includes(dbSearch.toLowerCase()) || a.holder.toLowerCase().includes(dbSearch.toLowerCase());
-    return matchesSearch && a.amount >= minAmount;
+    return matchesSearch && a.amount >= minAmount && a.amount <= maxAmount;
   });
+
+  const findLikeMissingAssets = (record: any) => {
+    if (!record) return [];
+    const words = record.owner.split(/\s+/).filter((w: string) => {
+      const x = w.toUpperCase();
+      return x.length > 2 && !["INC", "CORP", "LTD", "TRUST", "THE", "AND", "LLC", "ESTATE", "COMPANY", "L.P.", "LP"].includes(x);
+    });
+    if (words.length === 0) return [];
+    return combinedCatalog.filter(a => {
+      if (a.id === record.id) return false;
+      return words.some((term: string) => a.owner.toUpperCase().includes(term.toUpperCase()));
+    });
+  };
+
+  const handleIncorporateToCrm = () => {
+    const selectedRows = combinedCatalog.filter(row => selectedDbAssetIds.includes(row.id));
+    if (selectedRows.length === 0) {
+      alert("No records selected! Please check one or more asset rows in the table first.");
+      return;
+    }
+
+    const assetsToInsert = selectedRows.map(row => ({
+      id: row.id,
+      name: row.owner,
+      address: (row as any).location || "Escheated Property Registry Record",
+      state: row.state,
+      type: row.type as any,
+      holderCompany: row.holder,
+      amount: row.amount
+    }));
+
+    const totalInjectedVal = assetsToInsert.reduce((sum, a) => sum + a.amount, 0);
+
+    if (targetCrmCaseIdDb === "new_db_case") {
+      const primaryAgent = dbAssignedAgent || "Jeff";
+      const folderName = (customNewDbCaseName.trim() || `${selectedRows[0].owner} ASSET CLUSTER`).toUpperCase();
+
+      const newCase = {
+        id: "sqlite-case-" + Date.now(),
+        categoryName: folderName,
+        query: { generalHighValue: true, targetState: selectedRows[0].state },
+        assets: assetsToInsert,
+        relatives: [],
+        createdAt: Date.now(),
+        status: "Lead" as any,
+        claimantType: "Individual" as any,
+        ownerName: selectedRows[0].owner,
+        claimNumber: `${selectedRows[0].state}-${Math.floor(Math.random() * 89999) + 10000}`,
+        agent: primaryAgent,
+        notes: `Imported directly from master database records.\nAssigned to Representative Agent: ${primaryAgent} to run recovery.\nContains ${selectedRows.length} assets (Cumulative value: $${totalInjectedVal.toLocaleString()}).`,
+        timeline: [
+          { date: new Date().toLocaleDateString(), stage: "Lead Created", desc: `Record folder initialized from SQLite database. Process assigned to agent ${primaryAgent} to run the claim.` }
+        ],
+        tasks: [
+          { id: "t1", text: `Verify eligibility for ${selectedRows[0].owner}`, done: false },
+          { id: "t2", text: "Acquire Power of Attorney or corporate claim authority proof", done: false },
+          { id: "t3", text: "Sign maximum legally binding agreement (max 10% statutory standard limit)", done: false },
+          { id: "t4", text: `Formally submit files to ${selectedRows[0].state} Controller division`, done: false }
+        ]
+      };
+
+      if (onAddCaseToSaved) {
+        onAddCaseToSaved(newCase);
+        alert(`SUCCESS: Created a new CRM lead folder "${folderName}" containing ${assetsToInsert.length} assets!\nAssigned to Agent: ${primaryAgent} to run the case.\nNavigate to the Saved Lead Folders tab to track progress.`);
+        setSelectedDbAssetIds([]);
+        setCustomNewDbCaseName("");
+      }
+    } else {
+      const existing = savedCases.find(c => c.id === targetCrmCaseIdDb);
+      if (!existing) {
+        alert("Selected CRM Case folder was not found.");
+        return;
+      }
+
+      const currentAssetIds = new Set(existing.assets.map(a => a.id));
+      const newlyAddedAssets = assetsToInsert.filter(a => !currentAssetIds.has(a.id));
+
+      if (newlyAddedAssets.length === 0) {
+        alert("The selected CRM Case folder already contains all these selected claims.");
+        return;
+      }
+
+      const updatedCase = {
+        ...existing,
+        assets: [...existing.assets, ...newlyAddedAssets],
+        notes: (existing.notes || "") + `\n\n--- Appended ${newlyAddedAssets.length} records via Registry Sync on ${new Date().toLocaleDateString()} ---\nAssigned Agent: ${existing.agent || "Unassigned"}.\nAdded properties: ` + newlyAddedAssets.map(a => `${a.name} ($${a.amount})`).join(", "),
+        timeline: [
+          ...(existing.timeline || []),
+          { date: new Date().toLocaleDateString(), stage: "Assets Appended", desc: `Injected ${newlyAddedAssets.length} newly selected database claims ($${newlyAddedAssets.reduce((sum, a) => sum + a.amount, 0).toLocaleString()} value) into Case file.` }
+        ]
+      };
+
+      if (onAddCaseToSaved) {
+        onAddCaseToSaved(updatedCase);
+        alert(`SUCCESS: Appended ${newlyAddedAssets.length} newly selected claims into existing case "${existing.categoryName}"!\nTotal claim value is now $${(existing.assets.reduce((sum: number, a: any) => sum + a.amount, 0) + newlyAddedAssets.reduce((sum, a) => sum + a.amount, 0)).toLocaleString()}.`);
+        setSelectedDbAssetIds([]);
+      }
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -583,78 +689,345 @@ Pineda Family Trust, 84300, FL, Life Insurance, Prudential`;
       )}
 
       {/* 4. ASSET DATABASE CATALOG SUBPAGE */}
-      {toolType === "asset_db" && (
-        <div className="space-y-6">
-          <div>
-            <span className="text-orange-400 text-xs font-mono font-bold uppercase bg-orange-400/10 px-2 py-0.5 rounded border border-orange-500/20">
-              National repositories
-            </span>
-            <h2 className="text-2xl font-bold tracking-tight text-neutral-100 mt-2">Combined State Records Registry</h2>
-            <p className="text-neutral-400 text-sm">Full catalog master record rows compiled from California, Texas, and Florida state databases.</p>
-          </div>
+      {toolType === "asset_db" && (() => {
+        const allIdsOnPage = filteredAssetsCatalog.map(r => r.id);
+        const isAllSelected = allIdsOnPage.length > 0 && allIdsOnPage.every(id => selectedDbAssetIds.includes(id));
+        
+        const toggleSelectAll = () => {
+          if (isAllSelected) {
+            setSelectedDbAssetIds(prev => prev.filter(id => !allIdsOnPage.includes(id)));
+          } else {
+            setSelectedDbAssetIds(prev => {
+              const unique = new Set([...prev, ...allIdsOnPage]);
+              return Array.from(unique);
+            });
+          }
+        };
 
-          <div className="flex flex-col md:flex-row gap-4 items-center justify-between border-b border-neutral-800 pb-4">
-            <div className="font-mono text-xs text-neutral-400">
-              Total cache capacity: <strong className="text-orange-400">{filteredAssetsCatalog.length} records</strong>
+        const toggleSelectIndividual = (id: string) => {
+          setSelectedDbAssetIds(prev => 
+            prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+          );
+        };
+
+        const similarMissing = selectedForFuzzySearch ? findLikeMissingAssets(selectedForFuzzySearch) : [];
+
+        // Calculate selected stats
+        const selectedCount = selectedDbAssetIds.length;
+        const selectedValue = combinedCatalog
+          .filter(r => selectedDbAssetIds.includes(r.id))
+          .reduce((sum, r) => sum + r.amount, 0);
+
+        return (
+          <div className="space-y-6">
+            <div>
+              <span className="text-orange-400 text-xs font-mono font-bold uppercase bg-orange-400/10 px-2 py-0.5 rounded border border-orange-500/20">
+                National repositories
+              </span>
+              <h2 className="text-2xl font-bold tracking-tight text-neutral-100 mt-2">Combined State Records Registry</h2>
+              <p className="text-neutral-400 text-sm">Full catalog master record rows compiled from California, Texas, and Florida state databases.</p>
             </div>
 
-            <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
-              <Input 
-                placeholder="Search owner or custodian..."
-                value={dbSearch}
-                onChange={e => setDbSearch(e.target.value)}
-                className="bg-[#0e0e11] border-neutral-850 text-xs w-full sm:w-64"
-              />
-              
-              <div className="flex items-center gap-2 whitespace-nowrap text-xs font-mono">
-                <span className="text-neutral-500 select-none">Min val:</span>
-                <span className="text-emerald-400 font-bold">${minAmount.toLocaleString()}</span>
-                <input 
-                  type="range"
-                  min="500"
-                  max="100000"
-                  step="500"
-                  value={minAmount}
-                  onChange={e => setMinAmount(parseInt(e.target.value))}
-                  className="accent-orange-500 w-32"
-                />
+            {/* Range Search & Keywords Filter Bar */}
+            <div className="bg-neutral-900/40 p-5 border border-neutral-900 rounded-xl space-y-4">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-400 block border-b border-neutral-900 pb-2">
+                Unified Search and Dollar Amount Range Limits
+              </span>
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+                {/* Keywords input */}
+                <div className="lg:col-span-4 space-y-1.5">
+                  <label className="text-[10px] text-neutral-500 font-mono tracking-wider uppercase block">Search Owner or Holder</label>
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-neutral-500 absolute left-2.5 top-2.5" />
+                    <Input 
+                      placeholder="e.g. Thomson Diggs, Est...."
+                      value={dbSearch}
+                      onChange={e => setDbSearch(e.target.value)}
+                      className="bg-neutral-950 border-neutral-850 text-xs text-neutral-300 pl-8 h-8.5"
+                    />
+                  </div>
+                </div>
+
+                {/* Min Amount */}
+                <div className="lg:col-span-4 space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <label className="text-[10px] text-neutral-500 font-mono tracking-wider uppercase block">Minimum Escheated value</label>
+                    <span className="text-xs font-mono text-emerald-450 font-bold">${minAmount.toLocaleString()}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Input 
+                      type="number" 
+                      value={minAmount}
+                      onChange={e => setMinAmount(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="bg-neutral-950 border-neutral-850 text-xs font-mono text-neutral-350 w-24 h-8.5"
+                    />
+                    <input 
+                      type="range"
+                      min="0"
+                      max="100000"
+                      step="500"
+                      value={Math.min(minAmount, 100000)}
+                      onChange={e => setMinAmount(parseInt(e.target.value) || 0)}
+                      className="accent-orange-500 flex-1 h-1 cursor-pointer"
+                    />
+                  </div>
+                </div>
+
+                {/* Max Amount */}
+                <div className="lg:col-span-4 space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <label className="text-[10px] text-neutral-500 font-mono tracking-wider uppercase block">Maximum Escheated value</label>
+                    <span className="text-xs font-mono text-emerald-450 font-bold">${maxAmount.toLocaleString()}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Input 
+                      type="number" 
+                      value={maxAmount}
+                      onChange={e => setMaxAmount(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="bg-neutral-950 border-neutral-850 text-xs font-mono text-neutral-350 w-28 h-8.5"
+                    />
+                    <input 
+                      type="range"
+                      min="500"
+                      max="1000000"
+                      step="5000"
+                      value={Math.min(maxAmount, 1000000)}
+                      onChange={e => setMaxAmount(parseInt(e.target.value) || 0)}
+                      className="accent-orange-500 flex-1 h-1 cursor-pointer"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
 
-          <Card className="border-neutral-800 bg-[#0e0e11] overflow-hidden">
-            <Table>
-              <TableHeader className="bg-neutral-900/50">
-                <TableRow className="border-neutral-800">
-                  <TableHead className="font-mono text-xs">Record Owner</TableHead>
-                  <TableHead className="font-mono text-xs">Escheated Amount</TableHead>
-                  <TableHead className="font-mono text-xs">Custodian</TableHead>
-                  <TableHead className="font-mono text-xs">Property Type</TableHead>
-                  <TableHead className="font-mono text-xs">Origin State</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredAssetsCatalog.map((row, idx) => (
-                  <TableRow key={idx} className="border-neutral-800 hover:bg-neutral-900/30">
-                    <TableCell className="font-mono font-bold text-xs text-neutral-100">{row.owner}</TableCell>
-                    <TableCell className="text-emerald-400 font-mono font-semibold text-xs">${row.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
-                    <TableCell className="text-xs text-neutral-400">{row.holder}</TableCell>
-                    <TableCell className="text-xs text-neutral-450">{row.type}</TableCell>
-                    <TableCell className="text-xs text-orange-400 font-mono font-semibold">{row.state}</TableCell>
-                  </TableRow>
-                ))}
-                {filteredAssetsCatalog.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center py-6 text-neutral-500 animate-pulse">
-                      No assets found matching sliders parameters filter.
-                    </TableCell>
-                  </TableRow>
+            {/* FUZZY MATCHES SIMILAR PANELS (MISSING ASSETS SCANNER) */}
+            {selectedForFuzzySearch && (
+              <Card className="border-orange-500/30 bg-[#0c0c0e] p-5 rounded-xl space-y-4">
+                <div className="flex justify-between items-start border-b border-neutral-900 pb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-1.5 rounded-lg bg-orange-550/15 text-orange-400 border border-orange-500/20">
+                      <Sparkle className="w-4 h-4 animate-spin-slow" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-mono font-bold tracking-wider text-orange-400 uppercase">Beneficiary Like/Missing Assets Scanner</h4>
+                      <p className="text-[11px] text-neutral-450 mt-1">Found potentially connected unclaimed holdings for: <strong className="text-neutral-200">{selectedForFuzzySearch.owner}</strong></p>
+                    </div>
+                  </div>
+                  <Button 
+                    variant="ghost" 
+                    className="h-6 px-2 text-neutral-500 hover:text-neutral-200 text-[10px] font-mono border border-neutral-850" 
+                    onClick={() => setSelectedForFuzzySearch(null)}
+                  >
+                    Hide Scanner
+                  </Button>
+                </div>
+                
+                {similarMissing.length === 0 ? (
+                  <div className="text-center py-4 text-xs text-neutral-500 font-mono">
+                    No additional assets matching claimant surname/token tokens were discovered.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-xs text-neutral-450 leading-relaxed">
+                      We scanned the master repositories and discovered <span className="text-orange-400 font-bold font-mono">{similarMissing.length}</span> other unclaimed files belonging to similar or matching owners. Check files below to merge them into your selection desk.
+                    </p>
+                    <div className="overflow-x-auto border border-neutral-900 rounded-lg max-h-48 overflow-y-auto">
+                      <Table>
+                        <TableHeader className="bg-neutral-950">
+                          <TableRow className="border-neutral-900">
+                            <TableHead className="w-10 py-1.5 px-3"></TableHead>
+                            <TableHead className="font-mono text-xs py-1.5 px-2">Discovered Owner</TableHead>
+                            <TableHead className="font-mono text-xs py-1.5 px-2">Escheated Cash</TableHead>
+                            <TableHead className="font-mono text-xs py-1.5 px-2">Custodian</TableHead>
+                            <TableHead className="font-mono text-xs py-1.5 px-2">State</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {similarMissing.map((sim) => {
+                            const isChecked = selectedDbAssetIds.includes(sim.id);
+                            return (
+                              <TableRow key={sim.id} className="border-neutral-900 hover:bg-neutral-900/40">
+                                <TableCell className="py-2 px-3">
+                                  <input 
+                                    type="checkbox" 
+                                    checked={isChecked}
+                                    onChange={() => toggleSelectIndividual(sim.id)}
+                                    className="rounded border-neutral-800 bg-neutral-950 text-orange-500 accent-orange-500 w-3.5 h-3.5 cursor-pointer"
+                                  />
+                                </TableCell>
+                                <TableCell className="font-mono text-xs text-white font-bold py-2 px-2">{sim.owner}</TableCell>
+                                <TableCell className="font-mono text-xs font-semibold text-emerald-450 py-2 px-2">${sim.amount.toLocaleString()}</TableCell>
+                                <TableCell className="text-[11px] text-neutral-400 py-2 px-2">{sim.holder}</TableCell>
+                                <TableCell className="text-[11px] text-orange-400 font-mono py-2 px-2">{sim.state}</TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
                 )}
-              </TableBody>
-            </Table>
-          </Card>
-        </div>
-      )}
+              </Card>
+            )}
+
+            {/* MASTER DATABASE TABLE */}
+            <div className="border border-neutral-850 rounded-xl bg-[#08080a] overflow-hidden">
+              <div className="flex justify-between items-center p-4 border-b border-neutral-900 bg-neutral-900/10">
+                <span className="text-[11px] font-mono text-neutral-450">Displaying <strong className="text-orange-400">{filteredAssetsCatalog.length}</strong> matching files inside catalog indexes</span>
+                {selectedCount > 0 && (
+                  <Badge className="bg-orange-500/10 text-orange-400 border border-orange-500/20 font-mono text-[10px] leading-none py-1 px-2">
+                    {selectedCount} Selected
+                  </Badge>
+                )}
+              </div>
+              <Table>
+                <TableHeader className="bg-neutral-900/40">
+                  <TableRow className="border-neutral-900">
+                    <TableHead className="w-12 text-center">
+                      <input 
+                        type="checkbox" 
+                        checked={isAllSelected}
+                        onChange={toggleSelectAll}
+                        className="rounded border-neutral-800 bg-neutral-950 text-orange-500 accent-orange-500 w-3.5 h-3.5 cursor-pointer"
+                      />
+                    </TableHead>
+                    <TableHead className="font-mono text-xs">Record Owner Surname</TableHead>
+                    <TableHead className="font-mono text-xs">Escheated Amount</TableHead>
+                    <TableHead className="font-mono text-xs">Custodian</TableHead>
+                    <TableHead className="font-mono text-xs">Property Category</TableHead>
+                    <TableHead className="font-mono text-xs">Origin State</TableHead>
+                    <TableHead className="font-mono text-xs text-right pr-6">Similar Scanner</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredAssetsCatalog.map((row) => {
+                    const isChecked = selectedDbAssetIds.includes(row.id);
+                    return (
+                      <TableRow key={row.id} className={cn("border-neutral-900 hover:bg-neutral-900/30 transition-all", isChecked && "bg-orange-500/5")}>
+                        <TableCell className="text-center py-3">
+                          <input 
+                            type="checkbox" 
+                            checked={isChecked}
+                            onChange={() => toggleSelectIndividual(row.id)}
+                            className="rounded border-neutral-800 bg-neutral-950 text-orange-500 accent-orange-500 w-3.5 h-3.5 cursor-pointer"
+                          />
+                        </TableCell>
+                        <TableCell className="font-mono font-bold text-xs text-neutral-100 py-3">{row.owner}</TableCell>
+                        <TableCell className="text-emerald-400 font-mono font-semibold text-[13px] py-3">${row.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                        <TableCell className="text-xs text-neutral-400 py-3">{row.holder}</TableCell>
+                        <TableCell className="text-xs text-neutral-450 py-3">{row.type}</TableCell>
+                        <TableCell className="text-xs text-orange-400 font-mono font-semibold py-3">{row.state}</TableCell>
+                        <TableCell className="text-right py-3 pr-6">
+                          <Button
+                            variant="outline"
+                            className="h-7 px-3 border-orange-500/15 hover:border-orange-500/30 text-orange-400 text-[10px] font-mono hover:bg-orange-500/5 gap-1 rounded-md cursor-pointer"
+                            onClick={() => setSelectedForFuzzySearch(row)}
+                          >
+                            <Sparkles className="w-3 h-3 text-orange-400/80" />
+                            Scan Similar Unclaimed
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                  {filteredAssetsCatalog.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center py-12 text-neutral-500 font-mono animate-pulse">
+                        No assets found matching the specified dollar parameters filter bounds.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+
+            {/* DIRECT CRM DROPPER & ASSIGNMENT FOR SAVING SELECTION */}
+            {selectedCount > 0 && (
+              <Card className="border-neutral-800 bg-gradient-to-b from-[#0a0a0d] to-neutral-950 rounded-xl overflow-hidden shadow-xl animate-fade-in border border-orange-500/10">
+                <CardHeader className="bg-neutral-900/30 border-b border-neutral-900 py-4 px-6 flex flex-row items-center justify-between">
+                  <div>
+                    <CardTitle className="text-xs font-mono font-bold tracking-wider text-neutral-300 uppercase">
+                      Incorporate Ingested Records into active CRM Case File
+                    </CardTitle>
+                    <CardDescription className="text-[11px] text-neutral-500">
+                      Instantly merge {selectedCount} selected state files and assign them to an active agent to run.
+                    </CardDescription>
+                  </div>
+                  <Badge className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold font-mono text-xs px-2.5 py-1">
+                    Total Value: ${selectedValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </Badge>
+                </CardHeader>
+                <CardContent className="p-6">
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-end">
+                    
+                    {/* CRM Target Case dropdown */}
+                    <div className="lg:col-span-4 space-y-1.5">
+                      <label className="text-[10px] text-neutral-500 font-mono tracking-wider uppercase block">Target CRM Case File</label>
+                      <select
+                        value={targetCrmCaseIdDb}
+                        onChange={e => setTargetCrmCaseIdDb(e.target.value)}
+                        className="h-9 w-full rounded-md border border-neutral-850 bg-[#070709] px-3 py-1 text-xs text-neutral-300 font-mono focus:outline-none focus:ring-1 focus:ring-orange-500 cursor-pointer"
+                      >
+                        <option value="new_db_case">🆕 Create fresh Case Assignment file...</option>
+                        {savedCases.map(c => (
+                          <option key={c.id} value={c.id}>Append to Case: {c.categoryName}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* New Case Details section OR Appender explanation */}
+                    {targetCrmCaseIdDb === "new_db_case" ? (
+                      <>
+                        {/* Custom New Case Name */}
+                        <div className="lg:col-span-4 space-y-1.5">
+                          <label className="text-[10px] text-neutral-500 font-mono tracking-wider uppercase block">New CRM Folder Name</label>
+                          <Input 
+                            value={customNewDbCaseName}
+                            onChange={e => setCustomNewDbCaseName(e.target.value)}
+                            placeholder="e.g. COOPER ESTATE CLUSTER"
+                            className="bg-neutral-950 border-neutral-850 text-xs h-9 font-mono text-neutral-200"
+                          />
+                        </div>
+
+                        {/* Representative Agent */}
+                        <div className="lg:col-span-2 space-y-1.5">
+                          <label className="text-[10px] text-neutral-500 font-mono tracking-wider uppercase block">Assign Investigation Agent</label>
+                          <select
+                            value={dbAssignedAgent}
+                            onChange={e => setDbAssignedAgent(e.target.value)}
+                            className="h-9 w-full rounded-md border border-neutral-850 bg-[#070709] px-2 text-xs text-orange-400 font-semibold font-mono focus:outline-none focus:ring-1 focus:ring-orange-500 cursor-pointer"
+                          >
+                            {["Jeff", "Pankay", "Dhru", "AJ", "Owen"].map(rep => (
+                              <option key={rep} value={rep}>{rep}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="lg:col-span-6 bg-neutral-900/30 p-2 px-3.5 border border-dashed border-neutral-850 rounded text-xs text-neutral-450 font-mono flex items-center h-9">
+                        These selected claims will be seamlessly merged into the existing folder with historical log updates.
+                      </div>
+                    )}
+
+                    {/* Submit Dropper Button */}
+                    <div className="lg:col-span-2">
+                      <Button 
+                        onClick={handleIncorporateToCrm}
+                        className="w-full h-9 bg-orange-500 hover:bg-orange-600 text-black font-extrabold text-xs tracking-wide uppercase flex justify-center items-center gap-1.5 rounded-lg font-mono cursor-pointer"
+                      >
+                        <ArrowDownToLine className="w-4 h-4" />
+                        Incorporate
+                      </Button>
+                    </div>
+
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+          </div>
+        );
+      })()}
 
       {/* 5. IMPORT CSV SUBPAGE */}
       {toolType === "import_csv" && (
